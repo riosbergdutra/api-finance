@@ -1,5 +1,10 @@
 package com.api.finance.security;
 
+import com.api.finance.user.service.UserService;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -7,33 +12,29 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
-
-    private final OAuth2LoginSuccessHandler successHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-
         http
-            .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/v3/api-docs/**", "/swagger-ui/**").permitAll()
-                .anyRequest().authenticated()
-            )
             .csrf(csrf -> csrf.disable())
-            .cors(Customizer.withDefaults())
-            .oauth2Login(oauth -> oauth
-                .successHandler(successHandler)
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/usuario/callback", "/usuario/refresh").permitAll()
+                .anyRequest().permitAll()
             )
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+            // Aqui ele só aceitava o Token, não fazia o redirecionamento de login
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
 
         return http.build();
     }
