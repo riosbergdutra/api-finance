@@ -1,5 +1,6 @@
 package com.api.finance.bff.model;
 
+import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,14 +15,14 @@ import java.io.Serializable;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@RedisHash(value = "AuthSession", timeToLive = 2592000)
+@RedisHash(value = "auth_session", timeToLive = 2592000)
 public class AuthSession implements Serializable {
 
     @Id
+    @Column(nullable = false, unique = true)
     private String sessionId;
-
-    @Indexed
+    @Column(nullable = false)
     private String keycloakId;
-    
+    @Column(nullable = false, unique = true)
     private String refreshToken;
 }
