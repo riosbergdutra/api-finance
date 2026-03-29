@@ -1,4 +1,9 @@
 package com.api.finance.bff.excetlions;
 
-public class SessionNotFoundException {
+
+// quando o session_id nao existe no redis
+public class SessionNotFoundException extends RuntimeException {
+    public SessionNotFoundException(String message) {
+        super(message);
+    }
 }
