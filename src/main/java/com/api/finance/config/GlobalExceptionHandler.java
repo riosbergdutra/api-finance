@@ -1,9 +1,9 @@
 package com.api.finance.config;
 
 import com.api.finance.bff.dto.ErrorResponseDTO;
-
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
+import com.api.finance.shared.exception.ResourceNotFoundException; // Adicionado
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,27 +15,30 @@ import org.springframework.web.client.RestClientException;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    // Erro de Sessão (Ex: Refresh em cookie inválido)
+    // NOVO: Tratamento para Recursos não encontrados (User, Account, etc)
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> handleResourceNotFound(ResourceNotFoundException ex) {
+        log.warn("Recurso não encontrado: {}", ex.getMessage());
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
+    }
+
     @ExceptionHandler(SessionNotFoundException.class)
     public ResponseEntity<ErrorResponseDTO> handleSessionNotFound(SessionNotFoundException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.UNAUTHORIZED);
     }
 
-    // Erro de Integração com Keycloak
     @ExceptionHandler(AuthIntegrationException.class)
     public ResponseEntity<ErrorResponseDTO> handleAuthIntegration(AuthIntegrationException ex) {
         log.error("Erro de integração com IDP: {}", ex.getMessage());
         return buildResponse("Falha na comunicação com o provedor de identidade.", HttpStatus.BAD_GATEWAY);
     }
 
-    // Erro Genérico do RestClient (Se o Keycloak cair, por exemplo)
     @ExceptionHandler(RestClientException.class)
     public ResponseEntity<ErrorResponseDTO> handleRestClientException(RestClientException ex) {
         log.error("Erro na chamada externa: ", ex);
         return buildResponse("O serviço de autenticação está temporariamente indisponível.", HttpStatus.SERVICE_UNAVAILABLE);
     }
 
-    // Erro genérico para qualquer outra coisa (Fallback de segurança)
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDTO> handleGenericException(Exception ex) {
         log.error("Erro não tratado detectado: ", ex);
