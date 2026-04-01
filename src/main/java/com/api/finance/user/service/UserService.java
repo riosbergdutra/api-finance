@@ -1,81 +1,50 @@
 package com.api.finance.user.service;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestClient;
-
-import com.api.finance.user.dto.LoginResponseDTO;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-import org.springframework.http.MediaType;
+import com.api.finance.config.AuthenticatedUser;
+import com.api.finance.config.AuthenticatedUserProvider;
+import com.api.finance.shared.exception.ResourceNotFoundException;
+import com.api.finance.user.dto.UserResponseDTO;
+import com.api.finance.user.model.User;
+import com.api.finance.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
-    private final RestClient restClient;
+    private final UserRepository userRepository;
+    private final AuthenticatedUserProvider userProvider; // Injetado conforme o AuthService
 
-    @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
-    private String clientId;
+    @Transactional(readOnly = true)
+    public UserResponseDTO getMe(Jwt jwt) {
+        // 1. Usa o provider para extrair a identidade de forma segura e padronizada
+        AuthenticatedUser authenticatedUser = userProvider.get(jwt);
+        UUID keycloakId = authenticatedUser.id();
 
-    @Value("${spring.security.oauth2.client.registration.keycloak.client-secret}")
-    private String clientSecret;
+        log.info("Iniciando busca de perfil para o usuário autenticado: {}", keycloakId);
 
-    @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
-    private String issuerUri;
+        // 2. Busca no banco usando a âncora do Keycloak
+        User user = userRepository.findByKeycloakId(keycloakId)
+                .orElseThrow(() -> {
+                    log.error("Tentativa de acesso a perfil inexistente. Keycloak ID: {}", keycloakId);
+                    return ResourceNotFoundException.of("User", keycloakId);
+                });
 
-    public LoginResponseDTO trocarCodePorToken(String code) {
-        return buscarTokensNoKeycloak("authorization_code", "code", code);
+        log.debug("Perfil localizado com sucesso para o e-mail: {}", user.getEmail());
+
+        // 3. Retorno do DTO (Sem expor a Entity)
+        return new UserResponseDTO(
+                user.getId(),
+                user.getNome(),
+                user.getEmail(),
+                user.getCriadoEm()
+        );
     }
-
-    public LoginResponseDTO refreshToken(String refreshToken) {
-        return buscarTokensNoKeycloak("refresh_token", "refresh_token", refreshToken);
-    }
-
-    public void fazerLogoutNoKeycloak(String refreshToken) {
-        MultiValueMap<String, String> body = criarBaseFormData();
-        body.add("refresh_token", refreshToken);
-
-        enviarRequisicaoKeycloak("/protocol/openid-connect/logout", body);
-    }
-
-    // Método genérico para buscar tokens (DRY - Don't Repeat Yourself)
-    private LoginResponseDTO buscarTokensNoKeycloak(String grantType, String paramName, String paramValue) {
-        MultiValueMap<String, String> body = criarBaseFormData();
-        body.add("grant_type", grantType);
-        body.add(paramName, paramValue);
-
-        if ("authorization_code".equals(grantType)) {
-            body.add("redirect_uri", "http://localhost:8080/usuario/callback");
-        }
-
-        KeycloakTokenResponse response = enviarRequisicaoKeycloak("/protocol/openid-connect/token", body);
-        
-        if (response == null) throw new RuntimeException("Erro ao processar tokens no Keycloak");
-        return new LoginResponseDTO(response.accessToken(), response.refreshToken());
-    }
-
-    private MultiValueMap<String, String> criarBaseFormData() {
-        MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
-        map.add("client_id", clientId);
-        map.add("client_secret", clientSecret);
-        return map;
-    }
-
-    private KeycloakTokenResponse enviarRequisicaoKeycloak(String path, MultiValueMap<String, String> body) {
-        return restClient.post()
-                .uri(issuerUri + path)
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(body)
-                .retrieve()
-                .body(KeycloakTokenResponse.class);
-    }
-
-    private record KeycloakTokenResponse(
-            @JsonProperty("access_token") String accessToken,
-            @JsonProperty("refresh_token") String refreshToken
-    ) {}
 }
