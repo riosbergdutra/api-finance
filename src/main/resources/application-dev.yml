@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/finance
+    username: postgres
+    password: password
+
+  security:
+    oauth2:
+      # PARTE 1: Configuração para o login inicial (Authorization Code)
+      client:
+        registration:
+          keycloak:
+            client-id: bff-codeflow
+            client-secret: t3zl8vYDixN9nu8pA2Y6mDHThQknpzEa
+            scope: openid
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/keycloak"
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8180/realms/bff-codeflow
+
+      # PARTE 2: A CORREÇÃO - Configuração para validar os tokens nas chamadas de API
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/bff-codeflow

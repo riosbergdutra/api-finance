@@ -1,4 +1,4 @@
-package com.api.finance.bff.excetlions;
+package com.api.finance.bff.exceptions;
 
 
 // quando o session_id nao existe no redis

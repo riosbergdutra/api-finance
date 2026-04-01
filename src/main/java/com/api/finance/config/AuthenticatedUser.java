@@ -1,4 +1,7 @@
 package com.api.finance.config;
 
-public record AutenticatedUser() {
-}
+
+import java.util.UUID;
+
+public record AuthenticatedUser(
+        UUID id) {}
