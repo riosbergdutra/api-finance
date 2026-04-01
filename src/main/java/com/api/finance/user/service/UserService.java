@@ -1,34 +1,23 @@
 package com.api.finance.user.service;
 
-import java.util.UUID;
-
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseCookie;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
 import com.api.finance.user.dto.LoginResponseDTO;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.MediaType;
 import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
-    private final UserRepository repository;
     private final RestClient restClient;
 
-    // Lidos do application.yaml — mantenha lá, não hardcode aqui
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String clientId;
 
@@ -38,146 +27,55 @@ public class UserService {
     @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
     private String issuerUri;
 
-    // -------------------------------------------------------------------------
-    // Busca / utilitários
-    // -------------------------------------------------------------------------
-
-    /**
-     * Busca um usuário pelo Keycloak ID.
-     */
-    public User buscarPorKeycloakId(UUID keycloakId) {
-        return repository.findByKeycloakId(keycloakId)
-                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+    public LoginResponseDTO trocarCodePorToken(String code) {
+        return buscarTokensNoKeycloak("authorization_code", "code", code);
     }
 
-    /**
-     * Obtém o Keycloak ID do usuário a partir do JWT atual.
-     */
-    public UUID obterKeycloakIdAtual(Jwt jwt) {
-        return UUID.fromString(jwt.getClaimAsString("sub"));
+    public LoginResponseDTO refreshToken(String refreshToken) {
+        return buscarTokensNoKeycloak("refresh_token", "refresh_token", refreshToken);
     }
 
-    /**
-     * Obtém o ID interno do usuário sem precisar passá-lo na URL.
-     */
-    public UUID obterUsuarioId(Jwt jwt) {
-        UUID keycloakId = obterKeycloakIdAtual(jwt);
-        return buscarPorKeycloakId(keycloakId).getId();
+    public void fazerLogoutNoKeycloak(String refreshToken) {
+        MultiValueMap<String, String> body = criarBaseFormData();
+        body.add("refresh_token", refreshToken);
+
+        enviarRequisicaoKeycloak("/protocol/openid-connect/logout", body);
     }
 
-    // -------------------------------------------------------------------------
-    // Criação / atualização
-    // -------------------------------------------------------------------------
+    // Método genérico para buscar tokens (DRY - Don't Repeat Yourself)
+    private LoginResponseDTO buscarTokensNoKeycloak(String grantType, String paramName, String paramValue) {
+        MultiValueMap<String, String> body = criarBaseFormData();
+        body.add("grant_type", grantType);
+        body.add(paramName, paramValue);
 
-    /**
-     * Cria ou atualiza o usuário a partir dos claims do OAuth2 login.
-     */
-    @Transactional
-    public User criarOuAtualizarUsuario(OAuth2AuthenticationToken authToken) {
-        String sub = authToken.getPrincipal().getAttribute("sub");
-        String nome = authToken.getPrincipal().getAttribute("preferred_username");
-        String email = authToken.getPrincipal().getAttribute("email");
+        if ("authorization_code".equals(grantType)) {
+            body.add("redirect_uri", "http://localhost:8080/usuario/callback");
+        }
 
-        UUID keycloakId = UUID.fromString(sub);
-
-        User usuario = repository.findByKeycloakId(keycloakId)
-                .orElseGet(() -> {
-                    User novo = new User();
-                    novo.setKeycloakId(keycloakId);
-                    novo.setEmail(email);
-                    return novo;
-                });
-
-        usuario.setNome(nome);
-        usuario.setEmail(email);
-        usuario.setAtivo(true);
-
-        return repository.save(usuario);
+        KeycloakTokenResponse response = enviarRequisicaoKeycloak("/protocol/openid-connect/token", body);
+        
+        if (response == null) throw new RuntimeException("Erro ao processar tokens no Keycloak");
+        return new LoginResponseDTO(response.accessToken(), response.refreshToken());
     }
 
-    // -------------------------------------------------------------------------
-    // Token refresh
-    // -------------------------------------------------------------------------
+    private MultiValueMap<String, String> criarBaseFormData() {
+        MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
+        map.add("client_id", clientId);
+        map.add("client_secret", clientSecret);
+        return map;
+    }
 
-    /**
-     * Usa o refresh_token para obter um novo access_token no Keycloak.
-     * Atualiza o cookie refresh_token com o novo valor recebido.
-     *
-     * @param refreshToken valor atual do cookie refresh_token
-     * @param response     usado para atualizar o cookie com o novo refresh_token
-     * @return DTO com o novo access_token para o frontend
-     */
-    public LoginResponseDTO renovarToken(String refreshToken, HttpServletResponse response) {
-        String tokenEndpoint = issuerUri + "/protocol/openid-connect/token";
-
-        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-        formData.add("grant_type", "refresh_token");
-        formData.add("client_id", clientId);
-        formData.add("client_secret", clientSecret);
-        formData.add("refresh_token", refreshToken);
-
-        KeycloakTokenResponse keycloakResponse = restClient.post()
-                .uri(tokenEndpoint)
+    private KeycloakTokenResponse enviarRequisicaoKeycloak(String path, MultiValueMap<String, String> body) {
+        return restClient.post()
+                .uri(issuerUri + path)
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(formData)
+                .body(body)
                 .retrieve()
                 .body(KeycloakTokenResponse.class);
-
-        if (keycloakResponse == null || keycloakResponse.accessToken() == null) {
-            throw new RuntimeException("Resposta inválida do Keycloak");
-        }
-
-        // Atualiza o cookie com o novo refresh_token (rotação de token)
-        if (keycloakResponse.refreshToken() != null) {
-            ResponseCookie novoCookie = ResponseCookie.from("refresh_token", keycloakResponse.refreshToken())
-                    .httpOnly(true)
-                    .secure(false) // true em produção
-                    .path("/")
-                    .maxAge(java.time.Duration.ofDays(1))
-                    .build();
-            response.addHeader(HttpHeaders.SET_COOKIE, novoCookie.toString());
-        }
-
-        return new LoginResponseDTO(keycloakResponse.accessToken());
     }
 
-    // -------------------------------------------------------------------------
-    // Logout / revogação
-    // -------------------------------------------------------------------------
-
-    /**
-     * Revoga o refresh_token no Keycloak (backchannel logout).
-     * Após isso o token fica inválido mesmo que o cookie ainda exista.
-     *
-     * @param refreshToken valor do cookie refresh_token
-     */
-    public void revogarToken(String refreshToken) {
-        String revokeEndpoint = issuerUri + "/protocol/openid-connect/revoke";
-
-        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-        formData.add("client_id", clientId);
-        formData.add("client_secret", clientSecret);
-        formData.add("token", refreshToken);
-        formData.add("token_type_hint", "refresh_token");
-
-        restClient.post()
-                .uri(revokeEndpoint)
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(formData)
-                .retrieve()
-                .toBodilessEntity();
-    }
-
-    // -------------------------------------------------------------------------
-    // Record interno para mapear a resposta do Keycloak
-    // -------------------------------------------------------------------------
-
-    /**
-     * Mapeamento da resposta JSON do endpoint /token do Keycloak.
-     */
     private record KeycloakTokenResponse(
-            @com.fasterxml.jackson.annotation.JsonProperty("access_token") String accessToken,
-            @com.fasterxml.jackson.annotation.JsonProperty("refresh_token") String refreshToken,
-            @com.fasterxml.jackson.annotation.JsonProperty("expires_in") Long expiresIn
+            @JsonProperty("access_token") String accessToken,
+            @JsonProperty("refresh_token") String refreshToken
     ) {}
 }
