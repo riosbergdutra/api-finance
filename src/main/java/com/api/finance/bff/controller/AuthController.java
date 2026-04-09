@@ -59,6 +59,7 @@ public class AuthController {
 
         // O Service agora resolve tudo. O Controller só diz "VAI".
         authService.processarExclusaoConta(jwt, sessionId, response);
+        limparSessionCookie(response);
 
         return ResponseEntity.noContent().build();
     }

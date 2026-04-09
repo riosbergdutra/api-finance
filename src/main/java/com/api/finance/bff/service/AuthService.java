@@ -137,9 +137,6 @@ public class AuthService {
             this.logout(sessionId);
         }
 
-        // 4. Lógica de Cookie (Opcional: você pode injetar um 'CookieComponent' aqui)
-        this.limparSessionCookie(response);
-
         log.info("Fluxo de exclusão concluído para o usuário: {}", user.id());
     }
 
