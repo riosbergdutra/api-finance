@@ -41,7 +41,6 @@ public class UserService {
 
         // 3. Retorno do DTO (Sem expor a Entity)
         return new UserResponseDTO(
-                user.getId(),
                 user.getNome(),
                 user.getEmail(),
                 user.getCriadoEm()
