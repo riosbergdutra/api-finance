@@ -1,10 +1,10 @@
 package com.api.finance.account.model;
 
 public enum AccountType {
-    CHECKING,
-    SAVINGS,
-    CREDIT_CARD,
-    INVESTMENT,
-    CASH,
-    OTHER
+    CORRENTE,
+    POUPANCA,
+    CARTAO_CREDITO,
+    INVESTIMENTO,
+    DINHEIRO,
+    CARTEIRA_DIGITAL
 }
