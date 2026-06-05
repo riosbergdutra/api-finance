@@ -6,6 +6,7 @@ import com.api.finance.account.repository.AccountRepository;
 import com.api.finance.category.model.Category;
 import com.api.finance.category.repository.CategoryRepository;
 import com.api.finance.category.service.CategoryService;
+import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.dto.CreateTransactionRequest;
@@ -41,6 +42,7 @@ public class TransactionService {
     private final CategoryRepository categoryRepository;
     private final CategoryService categoryService;
     private final UserRepository userRepository;
+    private final SubscriptionService subscriptionService;
 
     @Transactional(readOnly = true)
     public Page<TransactionResponse> listar(LocalDate de, LocalDate ate, Pageable pageable, AuthenticatedUser caller) {
@@ -62,6 +64,11 @@ public class TransactionService {
     @Transactional
     public TransactionResponse criar(CreateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
+
+        LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
+        LocalDate fimMes    = inicioMes.withDayOfMonth(inicioMes.lengthOfMonth());
+        long transacoesNoMes = transactionRepository.countByUserIdAndMes(userId, inicioMes, fimMes);
+        subscriptionService.assertPodeCriarTransacao(userId, transacoesNoMes);
 
         // Garante ownership da conta
         Account account = accountRepository.findByIdAndUserId(req.accountId(), userId)

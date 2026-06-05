@@ -1,27 +1,34 @@
 package com.api.finance.security;
 
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
+/**
+ * Configuração de segurança do FinanceFlow.
+ *
+ * MODELO BFF STATELESS:
+ * - Nenhuma sessão HTTP criada (STATELESS)
+ * - Bearer JWT validado em todo request de negócio
+ * - Refresh token fica em Redis (AuthSession), nunca exposto
+ * - CSRF desabilitado: API stateless com JWT não precisa (sem cookies de autenticação)
+ *
+ * FAIL-SAFE: anyRequest().denyAll() — qualquer rota não mapeada é bloqueada.
+ * Nunca use permitAll() como regra final.
+ */
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
@@ -30,35 +37,57 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-
-            // 2. Define permissões das rotas
-            .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
-                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**").permitAll()
-                // O seu novo fluxo manual precisa dessas rotas abertas:
-                .requestMatchers("/usuario/callback", "/usuario/refresh", "/usuario/logout").permitAll()
-                .anyRequest().permitAll()
-            )
-            
-            .csrf(csrf -> csrf.disable())
-            .cors(Customizer.withDefaults())
-            
-            // 3. REMOVEMOS o .oauth2Login() daqui! 
-            // Agora o login é um endpoint comum no seu UserController.
-
-            // 4. Configura o Logout (Apenas para limpar o contexto do Spring, se houver)
-            .logout(logout -> logout
-                .logoutUrl("/usuario/logout")
-                .disable() // Desativamos o logout padrão para usar o seu do Controller
-            )
-            
-            // 5. RESOURCE SERVER: Valida o Bearer JWT que o Front enviará
-            .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
-            
-            // 6. STATELESS TOTAL: Nenhuma sessão será criada.
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            );
+                .authorizeHttpRequests(authorize -> authorize
+                        // Monitoramento — só health e info expostos
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/info").permitAll()
+                        // Documentação da API
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // BFF auth — sem JWT (recebe authorization code do Keycloak)
+                        .requestMatchers(HttpMethod.GET, "/auth/login", "auth/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout", "auth/callback").permitAll()
+                        // WebSocket — autenticado via query param token (não Bearer header)
+                        .requestMatchers("/ws/**").permitAll()
+                        // Módulos de negócio — JWT obrigatório
+                        .requestMatchers("/users/**").authenticated()
+                        .requestMatchers("/accounts/**").authenticated()
+                        .requestMatchers("/transactions/**").authenticated()
+                        .requestMatchers("/categories/**").authenticated()
+                        .requestMatchers("/budgets/**").authenticated()
+                        .requestMatchers("/goals/**").authenticated()
+                        .requestMatchers("/notifications/**").authenticated()
+                        .requestMatchers("/dashboard/**").authenticated()
+                        .requestMatchers("/subscriptions/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/webhooks/mercadopago").permitAll()
+                        .requestMatchers("/export/**").authenticated()
+                        .requestMatchers("/open-finance/**").authenticated()
+                        // FAIL-SAFE: bloqueia qualquer rota não mapeada explicitamente
+                        .anyRequest().denyAll()
+                )
+                // API stateless com JWT — CSRF não aplicável
+                .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
+                .logout(logout -> logout.disable())
+                // Valida Bearer JWT em todo request de negócio
+                .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
+                // Sem sessão HTTP
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+                // Security headers
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.deny())
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31536000)
+                        )
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
+                        )
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'self'; frame-ancestors 'none'")
+                        )
+                        .contentTypeOptions(Customizer.withDefaults())
+                );
 
         return http.build();
     }

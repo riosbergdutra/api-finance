@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
+import com.api.finance.subscription.exception.PlanLimitExceededException;
 
 import java.util.stream.Collectors;
 
@@ -32,6 +33,11 @@ public class GlobalExceptionHandler {
                 .map(e -> e.getField() + ": " + e.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         return buildResponse(message, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(PlanLimitExceededException.class)
+    public ResponseEntity<ErrorResponseDTO> handlePlanLimit(PlanLimitExceededException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.PAYMENT_REQUIRED);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
