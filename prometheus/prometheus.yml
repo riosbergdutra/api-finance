@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  # ── Spring Boot (Actuator/Micrometer) ──────────────────────────────────
+  - job_name: 'finance-backend'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['finance-app:8080']
+    # finance-app está na mesma rede Docker, então acessa direto (sem passar pelo Nginx)
+
+  # ── Redis ──────────────────────────────────────────────────────────────
+  # Requer redis-exporter rodando (incluído no compose.yaml)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # ── Nginx ──────────────────────────────────────────────────────────────
+  # Requer nginx-prometheus-exporter (incluído no compose.yaml)
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # ── O próprio Prometheus ───────────────────────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
