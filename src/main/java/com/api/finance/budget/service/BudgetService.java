@@ -91,7 +91,7 @@ public class BudgetService {
 
     /**
      * Recalcula valorGasto para todos os orçamentos do mês/ano.
-     * Deve ser chamado após criar/editar/deletar uma transação.
+     * Chamado após criar/editar/deletar uma transação.
      */
     @Transactional
     public void recalcularGastos(UUID userId, int mes, int ano) {
@@ -102,8 +102,7 @@ public class BudgetService {
     }
 
     /**
-     * Verifica alertas de orçamento e retorna os que ultrapassaram o percentual definido.
-     * Resultado usado pelo NotificationService para disparar alertas.
+     * Verifica alertas e retorna os orçamentos que atingiram o percentual de alerta.
      */
     @Transactional(readOnly = true)
     public List<Budget> verificarAlertas(UUID userId) {
@@ -116,9 +115,16 @@ public class BudgetService {
 
     // ── helpers ─────────────────────────────────────────────────────────
 
+    /**
+     * Calcula gasto usando intervalo de datas (LocalDate) em vez de MONTH()/YEAR().
+     * MONTH() e YEAR() são funções do MySQL — não funcionam no PostgreSQL.
+     * A query correta usa BETWEEN com primeiro e último dia do mês.
+     */
     private BigDecimal calcularGasto(UUID userId, UUID categoryId, int mes, int ano) {
-        if (categoryId == null) return BigDecimal.ZERO; // TODO: soma geral sem categoria implementar se necessário
-        return transactionRepository.sumDespesaByCategoria(userId, categoryId, mes, ano);
+        if (categoryId == null) return BigDecimal.ZERO;
+        LocalDate inicio = LocalDate.of(ano, mes, 1);
+        LocalDate fim = inicio.withDayOfMonth(inicio.lengthOfMonth());
+        return transactionRepository.sumDespesaByCategoria(userId, categoryId, inicio, fim);
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
