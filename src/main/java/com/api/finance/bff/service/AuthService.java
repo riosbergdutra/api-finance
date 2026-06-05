@@ -10,7 +10,10 @@ import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
 import com.api.finance.user.model.User;
 import com.api.finance.user.repository.UserRepository;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +52,7 @@ public class AuthService {
     @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
     private String issuerUri;
 
+   @Retry(name = "keycloak")
     public AuthResponseDTO login(String code) {
         // 1. Busca tokens no Keycloak
         KeycloakTokenResponse response = buscarTokensNoKeycloak("authorization_code", "code", code);
@@ -58,6 +62,16 @@ public class AuthService {
         String keycloakId = jwt.getSubject();
         String email = jwt.getClaimAsString("email");
         String nome = jwt.getClaimAsString("name");
+
+        if (nome == null || nome.isBlank()) {
+            // Tenta o username (no seu caso, vai pegar "fds123")
+            nome = jwt.getClaimAsString("preferred_username");
+        }
+
+        if (nome == null || nome.isBlank()) {
+            // Se nem o username existir, usa a primeira parte do email
+            nome = email != null ? email.split("@")[0] : "Usuário";
+        }
 
         // 3. Persiste o usuário (Lógica "Get or Create" segura para concorrência)
         garantirExistenciaUsuario(keycloakId, email, nome);
@@ -90,6 +104,8 @@ public class AuthService {
         }
     }
 
+    @CircuitBreaker(name = "keycloak", fallbackMethod = "refreshFallback")
+    @Retry(name = "keycloak")
     public AuthResponseDTO refresh(String sessionId) {
         // Trocamos RuntimeException por SessionNotFoundException
         AuthSession session = sessionRepository.findById(sessionId)
@@ -112,6 +128,7 @@ public class AuthService {
         }
     }
 
+    @CircuitBreaker(name = "keycloak")
     public void logout(String sessionId) {
         sessionRepository.findById(sessionId).ifPresent(session -> {
             try {
@@ -159,7 +176,7 @@ public class AuthService {
         body.add(paramName, paramValue);
 
         if ("authorization_code".equals(grantType)) {
-            body.add("redirect_uri", "http://localhost:8080/auth/callback");
+            body.add("redirect_uri", "http://localhost:4200/auth/callback");
         }
 
         return restClient.post()
@@ -189,13 +206,28 @@ public class AuthService {
                 "?client_id=" + clientId +
                 "&response_type=code" +
                 "&scope=openid profile email" +
-                "&redirect_uri=http://localhost:8080/auth/callback";
+                "&redirect_uri=http://localhost:4200/auth/callback";
     }
 
     private record KeycloakTokenResponse(
             @JsonProperty("access_token") String accessToken,
             @JsonProperty("refresh_token") String refreshToken
     ) {}
+
+    // ── Fallbacks Resilience4j ──────────────────────────────────────────
+    // Chamados quando o Circuit Breaker está aberto (Keycloak indisponível)
+
+    @SuppressWarnings("unused")
+    private AuthResponseDTO loginFallback(String code, Throwable t) {
+        log.error("Circuit Breaker OPEN: Keycloak indisponível para login. {}", t.getMessage());
+        throw new AuthIntegrationException("O serviço de autenticação está temporariamente indisponível.");
+    }
+
+    @SuppressWarnings("unused")
+    private AuthResponseDTO refreshFallback(String sessionId, Throwable t) {
+        log.error("Circuit Breaker OPEN: Keycloak indisponível para refresh. {}", t.getMessage());
+        throw new AuthIntegrationException("O serviço de autenticação está temporariamente indisponível.");
+    }
 
     private void limparSessionCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("SESSION_ID", "")
