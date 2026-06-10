@@ -1,0 +1,12 @@
+package com.api.finance.notification.model;
+
+public enum NotificationType {
+    ORCAMENTO_PROXIMO,
+    ORCAMENTO_ESTOURADO,
+    META_CONCLUIDA,
+    META_PRAZO,
+    CONTA_SALDO_NEGATIVO,
+    ASSINATURA_EXPIRANDO,
+    ASSINATURA_EXPIRADA,
+    TRANSACAO_PENDENTE
+}
