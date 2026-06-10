@@ -9,6 +9,7 @@ import com.api.finance.account.model.Account;
 import com.api.finance.account.repository.AccountRepository;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.exception.ResourceNotFoundException;
+import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,42 +20,16 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Serviço do módulo Account.
- *
- * ═══════════════════════════════════════════════════════
- * MODELO DE SEGURANÇA — LEIA ANTES DE MODIFICAR
- * ═══════════════════════════════════════════════════════
- *
- * 1. ISOLAMENTO DE DADOS (IDOR Prevention):
- *    Todos os métodos recebem `caller` (AuthenticatedUser extraído do JWT).
- *    O userId é resolvido a partir do keycloakId SOMENTE neste ponto de entrada.
- *    Nenhuma query pode retornar dados sem filtrar por userId.
- *
- * 2. TRUST BOUNDARY:
- *    Nenhum dado de identificação vem do request body.
- *    O userId nunca é aceito como parâmetro HTTP.
- *
- * 3. KEYCLOAK ISOLATION:
- *    Este módulo NÃO conhece keycloakId. Só opera com userId interno.
- *    A resolução keycloakId → userId acontece uma única vez, aqui no serviço.
- *
- * 4. LIMITES DE NEGÓCIO:
- *    Máximo de 10 contas ativas por usuário (plano freemium default).
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AccountService {
 
-    private static final int MAX_ACCOUNTS_PER_USER = 10;
+    private final AccountRepository       accountRepository;
+    private final UserRepository          userRepository;
+    private final SubscriptionService     subscriptionService;
 
-    private final AccountRepository accountRepository;
-    private final UserRepository userRepository;
-
-    // ──────────────────────────────────────────────────────────
-    // READ
-    // ──────────────────────────────────────────────────────────
+    // ── READ ──────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public List<AccountResponse> listActiveAccounts(AuthenticatedUser caller) {
@@ -68,27 +43,21 @@ public class AccountService {
     @Transactional(readOnly = true)
     public AccountResponse getById(UUID accountId, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        // findByIdAndUserId garante que a conta pertence ao caller (IDOR prevention)
         Account account = accountRepository.findByIdAndUserId(accountId, userId)
                 .orElseThrow(() -> new AccountNotFoundException(
                         "Conta não encontrada: " + accountId));
         return AccountResponse.de(account);
     }
 
-    // ──────────────────────────────────────────────────────────
-    // WRITE
-    // ──────────────────────────────────────────────────────────
+    // ── WRITE ─────────────────────────────────────────────────────────────
 
     @Transactional
     public AccountResponse create(CreateAccountRequest request, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        // Limite de contas por usuário
+        // Verifica limite do plano (FREE = 3 contas, PRO = ilimitado)
         long total = accountRepository.countByUserIdAndActiveTrue(userId);
-        if (total >= MAX_ACCOUNTS_PER_USER) {
-            throw new IllegalStateException(
-                    "Limite de " + MAX_ACCOUNTS_PER_USER + " contas ativas atingido.");
-        }
+        subscriptionService.assertPodeCriarConta(userId, total);
 
         // Nome único por usuário (case-insensitive)
         if (accountRepository.existsByUserIdAndNameIgnoreCase(userId, request.name())) {
@@ -122,12 +91,10 @@ public class AccountService {
     public AccountResponse update(UUID accountId, UpdateAccountRequest request, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        // Busca garantindo ownership (IDOR prevention)
         Account account = accountRepository.findByIdAndUserId(accountId, userId)
                 .orElseThrow(() -> new AccountNotFoundException(
                         "Conta não encontrada: " + accountId));
 
-        // Nome único, excluindo a própria conta
         if (accountRepository.existsByUserIdAndNameIgnoreCaseAndIdNot(userId, request.name(), accountId)) {
             throw new DuplicateAccountNameException(request.name());
         }
@@ -142,14 +109,9 @@ public class AccountService {
         return AccountResponse.de(updated);
     }
 
-    /**
-     * Soft-delete: desativa a conta sem remover dados históricos.
-     * Hard-delete deve ser operação administrativa, não exposta ao usuário.
-     */
     @Transactional
     public void deactivate(UUID accountId, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-
         int affected = accountRepository.deactivateByIdAndUserId(accountId, userId);
         if (affected == 0) {
             throw new AccountNotFoundException("Conta não encontrada: " + accountId);
@@ -157,17 +119,8 @@ public class AccountService {
         log.info("Conta desativada: id={} user={}", accountId, userId);
     }
 
-    // ──────────────────────────────────────────────────────────
-    // PRIVATE HELPERS
-    // ──────────────────────────────────────────────────────────
+    // ── HELPERS ───────────────────────────────────────────────────────────
 
-    /**
-     * Resolve keycloakId → userId interno.
-     *
-     * Ponto centralizado de tradução IAM → domínio.
-     * Executado UMA VEZ por request neste serviço.
-     * Todos os outros módulos devem replicar este padrão.
-     */
     private UUID resolveUserId(AuthenticatedUser caller) {
         return userRepository.findIdByKeycloakId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
