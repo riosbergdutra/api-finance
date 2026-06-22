@@ -31,6 +31,11 @@ import java.util.UUID;
  * Os Services (AccountService, TransactionService) chamam os métodos
  * assertPode*() antes de criar recursos — falhando com 402 Payment Required
  * se o limite for excedido.
+ *
+ * INTEGRAÇÃO COM STRIPE:
+ * - ativarPro() é chamado pelo webhook quando pagamento/subscription é confirmado
+ * - cancelarSubscricao() é chamado pelo usuário que quer desativar PRO
+ * - expirarAssinaturasVencidas() é executado diariamente pelo scheduler
  */
 @Service
 @RequiredArgsConstructor
@@ -43,6 +48,7 @@ public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final StripeService stripeService;
 
     // ── Consulta ─────────────────────────────────────────────────────────
 
@@ -64,8 +70,8 @@ public class SubscriptionService {
     public void assertPodeCriarConta(UUID userId, long contasAtuais) {
         if (contasAtuais >= FREE_LIMITE_CONTAS && !getOrCreateFree(userId).isPro()) {
             throw new PlanLimitExceededException(
-                "Plano gratuito permite no máximo " + FREE_LIMITE_CONTAS +
-                " contas. Faça upgrade para o plano PRO.");
+                    "Plano gratuito permite no máximo " + FREE_LIMITE_CONTAS +
+                            " contas. Faça upgrade para o plano PRO.");
         }
     }
 
@@ -77,8 +83,8 @@ public class SubscriptionService {
     public void assertPodeCriarTransacao(UUID userId, long transacoesNoMes) {
         if (transacoesNoMes >= FREE_LIMITE_TRANSACOES_MES && !getOrCreateFree(userId).isPro()) {
             throw new PlanLimitExceededException(
-                "Plano gratuito permite no máximo " + FREE_LIMITE_TRANSACOES_MES +
-                " transações por mês. Faça upgrade para o plano PRO.");
+                    "Plano gratuito permite no máximo " + FREE_LIMITE_TRANSACOES_MES +
+                            " transações por mês. Faça upgrade para o plano PRO.");
         }
     }
 
@@ -90,37 +96,86 @@ public class SubscriptionService {
     public void assertIsPro(UUID userId, String funcionalidade) {
         if (!getOrCreateFree(userId).isPro()) {
             throw new PlanLimitExceededException(
-                funcionalidade + " é exclusivo do plano PRO.");
+                    funcionalidade + " é exclusivo do plano PRO.");
         }
     }
 
-    // ── Ativação/desativação (chamado pelo webhook do Mercado Pago) ───────
+    // ── Ativação/desativação (chamado pelo webhook do Stripe) ─────────────
 
     /**
      * Ativa o plano PRO após pagamento confirmado.
-     * Chamado pelo webhook do Mercado Pago (a implementar com a integração).
+     * Chamado pelo webhook do Stripe quando:
+     * 1. payment_intent.succeeded (pagamento único)
+     * 2. customer.subscription.updated (renovação de subscription)
+     *
+     * @param userId         ID do usuário interno
+     * @param paymentIntentId ID do payment_intent (para pagamento único)
+     * @param subscriptionId ID da subscription (para recorrente)
+     * @param inicio         Data de início do período PRO
+     * @param fim            Data de término do período PRO
      */
     @Transactional
-    public void ativarPro(UUID userId, String paymentId, String subscriptionId,
-                           LocalDate inicio, LocalDate fim) {
+    public void ativarPro(UUID userId, String paymentIntentId, String subscriptionId,
+                          LocalDate inicio, LocalDate fim) {
         Subscription sub = getOrCreateFree(userId);
         sub.setPlano(PlanType.PRO);
         sub.setStatus(SubscriptionStatus.ACTIVE);
         sub.setInicioPeriodo(inicio);
         sub.setFimPeriodo(fim);
-        sub.setMercadoPagoPaymentId(paymentId);
-        sub.setMercadoPagoSubscriptionId(subscriptionId);
+        sub.setStripePaymentIntentId(paymentIntentId);
+        sub.setStripeSubscriptionId(subscriptionId);
         subscriptionRepository.save(sub);
 
         log.info("[Subscription] PRO ativado: userId={} até={}", userId, fim);
 
         // Notifica o usuário
-        // keycloakId seria buscado aqui se necessário para WebSocket
+        notificationService.criarNotificacao(
+                null,
+                userId,
+                NotificationType.SUBSCRIPTION_ACTIVATED,
+                "Parabéns! Você agora é um usuário PRO até " + fim,
+                null
+        );
+    }
+
+    /**
+     * Cancela a subscription do usuário (revoga PRO).
+     * Se houver uma subscription recorrente no Stripe, cancela lá também.
+     */
+    @Transactional
+    public void cancelarSubscricao(UUID userId) {
+        Subscription sub = subscriptionRepository.findByUserId(userId)
+                .orElseThrow(() ->
+                ResourceNotFoundException.of("Subscription", userId)
+        );
+
+        // Se tem subscription_id no Stripe, cancela lá
+        if (sub.getStripeSubscriptionId() != null && !sub.getStripeSubscriptionId().isBlank()) {
+            stripeService.cancelarSubscription(sub.getStripeSubscriptionId());
+        }
+
+        // Marca como cancelada localmente
+        sub.setStatus(SubscriptionStatus.CANCELLED);
+        sub.setPlano(PlanType.FREE);
+        subscriptionRepository.save(sub);
+
+        log.info("[Subscription] Assinatura cancelada: userId={}", userId);
+
+        // Notifica o usuário
+        notificationService.criarNotificacao(
+                null,
+                userId,
+                NotificationType.SUBSCRIPTION_CANCELED,
+                "Sua assinatura PRO foi cancelada. Você voltou ao plano FREE.",
+                null
+        );
     }
 
     /**
      * Expira assinaturas PRO vencidas.
      * Chamado pelo SubscriptionExpirationScheduler diariamente.
+     *
+     * Muda status de ACTIVE para EXPIRED e plano de PRO para FREE.
      */
     @Transactional
     public void expirarAssinaturasVencidas() {
@@ -130,6 +185,15 @@ public class SubscriptionService {
             sub.setPlano(PlanType.FREE);
             subscriptionRepository.save(sub);
             log.info("[Subscription] PRO expirado: userId={}", sub.getUserId());
+
+            // Notifica o usuário que PRO expirou
+            notificationService.criarNotificacao(
+                    null,
+                    sub.getUserId(),
+                    NotificationType.SUBSCRIPTION_EXPIRED,
+                    "Sua assinatura PRO expirou. Você voltou ao plano FREE.",
+                    null
+            );
         });
     }
 
@@ -151,8 +215,10 @@ public class SubscriptionService {
                 });
     }
 
+    /**
+     * Extrai o UUID do usuário a partir do AuthenticatedUser.
+     */
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
-                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
+        return caller.id();
     }
 }

@@ -1,91 +1,108 @@
 package com.api.finance.subscription.model;
 
 import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
- * Assinatura de um usuário.
+ * Model de Subscription (assinatura/plano do usuário).
  *
- * Cada usuário tem exatamente uma Subscription (criada automaticamente no cadastro como FREE).
- * Upgrade para PRO é feito via Mercado Pago — o webhook atualiza este registro.
+ * FLUXO DE CICLO DE VIDA:
  *
- * LIMITES DO PLANO FREE:
- * - 3 contas ativas
- * - 100 transações/mês
- * - Sem Open Finance
- * - Sem exportação Excel/PDF
+ * 1. Usuário criado → Subscription criada com plano=FREE, status=ACTIVE
  *
- * Esses limites são verificados em tempo real nos respectivos Services.
+ * 2. Usuário clica "Assinar PRO" → StripeService.criarPaymentIntent()
+ *    → Frontend coleta cartão com Stripe Payment Element
+ *    → Stripe cobra e webhook ativa PRO
+ *
+ * 3. Webhook "payment_intent.succeeded" ou "customer.subscription.updated"
+ *    → ativarPro() muda status para ACTIVE, plano para PRO, seta data de fim
+ *
+ * 4. Diariamente, SubscriptionExpirationScheduler roda
+ *    → Se hoje >= fimPeriodo: expirarAssinaturasVencidas()
+ *    → Muda status para EXPIRED, plano volta para FREE
+ *
+ * 5. Usuário pode cancelar PRO manualmente
+ *    → cancelarSubscricao() chama Stripe pra desativar
+ *    → Marca status como CANCELED, plano como FREE
+ *
+ * CAMPOS STRIPE:
+ * - stripePaymentIntentId: ID do payment_intent (pagamento único)
+ * - stripeSubscriptionId: ID da subscription (recorrente)
+ *
+ * Ao menos um deles será preenchido quando status=ACTIVE e plano=PRO.
  */
 @Entity
-@Table(name = "subscriptions",
-    indexes = @Index(name = "idx_subscription_user", columnList = "user_id", unique = true))
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Table(name = "subscription")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Subscription {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    /** FK para users.id — 1:1, não nullable */
-    @Column(name = "user_id", nullable = false, unique = true, updatable = false)
+    @Column(nullable = false, unique = true)
     private UUID userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
-    @Builder.Default
-    private PlanType plano = PlanType.FREE;
+    @Column(nullable = false)
+    private PlanType plano;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private SubscriptionStatus status = SubscriptionStatus.ACTIVE;
+    @Column(nullable = false)
+    private SubscriptionStatus status;
 
-    /** Data de início do período PRO atual */
     @Column(name = "inicio_periodo")
     private LocalDate inicioPeriodo;
 
-    /** Data de expiração do período PRO — null se FREE */
     @Column(name = "fim_periodo")
     private LocalDate fimPeriodo;
 
-    /** ID do pagamento no Mercado Pago — para rastreabilidade */
-    @Column(name = "mercado_pago_payment_id", length = 100)
-    private String mercadoPagoPaymentId;
+    // ─── Integração Stripe ─────────────────────────────────────────────────
 
-    /** ID da assinatura recorrente no Mercado Pago */
-    @Column(name = "mercado_pago_subscription_id", length = 100)
-    private String mercadoPagoSubscriptionId;
+    @Column(name = "stripe_payment_intent_id")
+    private String stripePaymentIntentId;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private OffsetDateTime criadoEm;
+    @Column(name = "stripe_subscription_id")
+    private String stripeSubscriptionId;
 
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private OffsetDateTime atualizadoEm;
+    public long diasRestantes() {
+        if (fimPeriodo == null) return 0;
+        return ChronoUnit.DAYS.between(LocalDate.now(), fimPeriodo);
+    }
 
-    // ── Métodos de domínio ────────────────────────────────────────────────
+    // ─── Métodos utilitários ────────────────────────────────────────────────
 
     public boolean isPro() {
-        return PlanType.PRO.equals(plano)
-            && SubscriptionStatus.ACTIVE.equals(status)
-            && (fimPeriodo == null || !fimPeriodo.isBefore(LocalDate.now()));
+        return PlanType.PRO.equals(plano) && SubscriptionStatus.ACTIVE.equals(status);
     }
 
-    public boolean isFree() {
-        return !isPro();
+    public boolean isExpired() {
+        return SubscriptionStatus.EXPIRED.equals(status);
     }
 
-    /** Retorna quantos dias faltam para expirar — -1 se FREE ou sem data */
-    public long diasParaExpirar() {
-        if (fimPeriodo == null) return -1;
-        return java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), fimPeriodo);
+    public boolean isCanceled() {
+        return SubscriptionStatus.CANCELLED.equals(status);
+
+
     }
+
+    // Se mudou de Mercado Pago para Stripe, as colunas antigas
+    // podem ser dropadas em migration (ou deixadas para compatibilidade)
+    // @Deprecated
+    // @Column(name = "mercadopago_payment_id")
+    // private String mercadoPagoPaymentId;
+    //
+    // @Deprecated
+    // @Column(name = "mercadopago_subscription_id")
+    // private String mercadoPagoSubscriptionId;
 }

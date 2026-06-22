@@ -25,7 +25,7 @@ public record SubscriptionResponse(
                 pro,
                 s.getInicioPeriodo(),
                 s.getFimPeriodo(),
-                s.diasParaExpirar(),
+                s.diasRestantes(),
                 pro ? Integer.MAX_VALUE : 3,
                 pro ? Integer.MAX_VALUE : 100
         );

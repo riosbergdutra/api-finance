@@ -43,7 +43,7 @@ public class SubscriptionExpirationScheduler {
         // 1. Notifica PRO expirando em 7 dias
         List<Subscription> expirando = subscriptionRepository.findProExpirandoAte(hoje, em7Dias);
         for (Subscription sub : expirando) {
-            long dias = sub.diasParaExpirar();
+            long dias = sub.diasRestantes();
             userRepository.findById(sub.getUserId()).ifPresent(user -> {
                 notificationService.criarNotificacao(
                         user.getKeycloakId().toString(),

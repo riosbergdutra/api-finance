@@ -8,6 +8,8 @@ import com.api.finance.user.model.User;
 import com.api.finance.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -16,18 +18,17 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * Job agendado: verifica metas próximas do prazo e saldo negativo em contas.
+ * FIX: substituído userRepository.findAll() por paginação com PageRequest,
+ * igual ao padrão adotado no BudgetAlertScheduler.
  *
  * CRON: todo dia às 8h (horário de Brasília)
- *
- * Dispara notificações para:
- * - Metas que vencem em 7 dias e ainda não foram concluídas
- * - Metas que vencem amanhã (urgência)
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class GoalDeadlineScheduler {
+
+    private static final int PAGE_SIZE = 100;
 
     private final UserRepository userRepository;
     private final GoalRepository goalRepository;
@@ -36,50 +37,55 @@ public class GoalDeadlineScheduler {
     @Scheduled(cron = "0 0 8 * * *", zone = "America/Sao_Paulo")
     public void verificarPrazosDeMetAs() {
         log.info("[Scheduler] Verificando prazos de metas");
-        LocalDate hoje = LocalDate.now();
-        LocalDate em7Dias = hoje.plusDays(7);
+        LocalDate hoje  = LocalDate.now();
         LocalDate amanha = hoje.plusDays(1);
         int total = 0;
+        int pagina = 0;
 
-        List<User> usuarios = userRepository.findAll();
-        for (User user : usuarios) {
-            try {
-                List<Goal> metas = goalRepository.findByUserIdAndConcluidaFalse(user.getId());
-                for (Goal meta : metas) {
-                    if (meta.getDataAlvo() == null) continue;
+        Page<User> paginaAtual;
+        do {
+            paginaAtual = userRepository.findAll(PageRequest.of(pagina, PAGE_SIZE));
 
-                    long diasRestantes = ChronoUnit.DAYS.between(hoje, meta.getDataAlvo());
+            for (User user : paginaAtual.getContent()) {
+                try {
+                    List<Goal> metas = goalRepository.findByUserIdAndConcluidaFalse(user.getId());
+                    for (Goal meta : metas) {
+                        if (meta.getDataAlvo() == null) continue;
 
-                    if (diasRestantes == 7 || meta.getDataAlvo().equals(amanha)) {
-                        String titulo = diasRestantes <= 1
-                                ? "Meta vence amanhã: " + meta.getNome()
-                                : "Meta vence em 7 dias: " + meta.getNome();
+                        long diasRestantes = ChronoUnit.DAYS.between(hoje, meta.getDataAlvo());
 
-                        String mensagem = String.format(
-                                "Sua meta \"%s\" vence em %d dia(s). Você juntou R$ %.2f de R$ %.2f (%.0f%%).",
-                                meta.getNome(),
-                                diasRestantes,
-                                meta.getValorAtual(),
-                                meta.getValorAlvo(),
-                                meta.getPercentualConcluido()
-                        );
+                        if (diasRestantes == 7 || meta.getDataAlvo().equals(amanha)) {
+                            String titulo = diasRestantes <= 1
+                                    ? "Meta vence amanhã: " + meta.getNome()
+                                    : "Meta vence em 7 dias: " + meta.getNome();
 
-                        notificationService.criarNotificacao(
-                                user.getKeycloakId().toString(),
-                                user.getId(),
-                                NotificationType.META_PRAZO,
-                                titulo,
-                                mensagem,
-                                "GOAL",
-                                meta.getId()
-                        );
-                        total++;
+                            String mensagem = String.format(
+                                    "Sua meta \"%s\" vence em %d dia(s). Você juntou R$ %.2f de R$ %.2f (%.0f%%).",
+                                    meta.getNome(),
+                                    diasRestantes,
+                                    meta.getValorAtual(),
+                                    meta.getValorAlvo(),
+                                    meta.getPercentualConcluido()
+                            );
+
+                            notificationService.criarNotificacao(
+                                    user.getKeycloakId().toString(),
+                                    user.getId(),
+                                    NotificationType.META_PRAZO,
+                                    titulo,
+                                    mensagem,
+                                    "GOAL",
+                                    meta.getId()
+                            );
+                            total++;
+                        }
                     }
+                } catch (Exception e) {
+                    log.error("[Scheduler] Erro ao verificar metas userId={}: {}", user.getId(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.error("[Scheduler] Erro ao verificar metas userId={}: {}", user.getId(), e.getMessage());
             }
-        }
+            pagina++;
+        } while (paginaAtual.hasNext());
 
         log.info("[Scheduler] {} notificações de prazo de meta disparadas", total);
     }

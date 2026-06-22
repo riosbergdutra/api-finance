@@ -1,6 +1,7 @@
 package com.api.finance.goal.service;
 
 import com.api.finance.config.AuthenticatedUser;
+import com.api.finance.events.FinanceEvents;
 import com.api.finance.goal.dto.CreateGoalRequest;
 import com.api.finance.goal.dto.DepositRequest;
 import com.api.finance.goal.dto.GoalResponse;
@@ -8,9 +9,11 @@ import com.api.finance.goal.exception.GoalNotFoundException;
 import com.api.finance.goal.model.Goal;
 import com.api.finance.goal.repository.GoalRepository;
 import com.api.finance.shared.exception.ResourceNotFoundException;
+import com.api.finance.user.model.User;
 import com.api.finance.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,7 @@ public class GoalService {
 
     private final GoalRepository goalRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;  // NOVO: injeta o publisher
 
     @Transactional(readOnly = true)
     public List<GoalResponse> listar(boolean apenasPendentes, AuthenticatedUser caller) {
@@ -82,11 +86,13 @@ public class GoalService {
     }
 
     /**
-     * Adiciona valor à meta. Se atingir ou superar o alvo, conclui automaticamente.
+     * Adiciona valor à meta. Se atingir ou superar o alvo, conclui automaticamente
+     * e publica MetaConcluidaEvent — notificação será enviada após o commit.
      */
     @Transactional
     public GoalResponse depositar(UUID id, DepositRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
+        User user = resolveUser(caller);
 
         Goal goal = goalRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
@@ -98,16 +104,31 @@ public class GoalService {
         BigDecimal novoValor = goal.getValorAtual().add(req.valor());
         goal.setValorAtual(novoValor);
 
-        if (novoValor.compareTo(goal.getValorAlvo()) >= 0) {
+        boolean acabouDeConcluir = novoValor.compareTo(goal.getValorAlvo()) >= 0;
+        if (acabouDeConcluir) {
             goal.setConcluida(true);
             log.info("Meta concluída: id={} user={}", id, userId);
         }
 
-        return GoalResponse.de(goalRepository.save(goal));
+        Goal saved = goalRepository.save(goal);
+
+        // FIX: publica evento APÓS salvar — listener executará só após o commit
+        if (acabouDeConcluir) {
+            eventPublisher.publishEvent(new FinanceEvents.MetaConcluidaEvent(
+                    user.getKeycloakId().toString(),
+                    userId,
+                    saved.getId(),
+                    saved.getNome(),
+                    saved.getValorAlvo()
+            ));
+        }
+
+        return GoalResponse.de(saved);
     }
 
     /**
      * Remove valor da meta (saque parcial).
+     * Se a meta estava concluída, reabre automaticamente.
      */
     @Transactional
     public GoalResponse sacar(UUID id, DepositRequest req, AuthenticatedUser caller) {
@@ -129,16 +150,32 @@ public class GoalService {
 
     /**
      * Conclui a meta manualmente, independente do valor atingido.
+     * Publica MetaConcluidaEvent.
      */
     @Transactional
     public GoalResponse concluir(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
+        User user = resolveUser(caller);
 
         Goal goal = goalRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
+        boolean jaConcluida = goal.isConcluida();
         goal.setConcluida(true);
-        return GoalResponse.de(goalRepository.save(goal));
+        Goal saved = goalRepository.save(goal);
+
+        // Só notifica se acabou de concluir agora
+        if (!jaConcluida) {
+            eventPublisher.publishEvent(new FinanceEvents.MetaConcluidaEvent(
+                    user.getKeycloakId().toString(),
+                    userId,
+                    saved.getId(),
+                    saved.getNome(),
+                    saved.getValorAlvo()
+            ));
+        }
+
+        return GoalResponse.de(saved);
     }
 
     @Transactional
@@ -149,10 +186,6 @@ public class GoalService {
         goalRepository.delete(goal);
     }
 
-    /**
-     * Projeção de conclusão: estima quantos dias faltam com base no ritmo de depósito atual.
-     * Retorna -1 se não há dados suficientes ou meta já concluída.
-     */
     @Transactional(readOnly = true)
     public long calcularProjecaoDias(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
@@ -174,8 +207,18 @@ public class GoalService {
         return restante.divide(ritmo, 0, java.math.RoundingMode.CEILING).longValue();
     }
 
+    // ── Helpers ────────────────────────────────────────────────────────────
+
     private UUID resolveUserId(AuthenticatedUser caller) {
         return userRepository.findIdByKeycloakId(caller.id())
+                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
+    }
+
+    /**
+     * Resolve o User completo (necessário para obter keycloakId como String para o evento).
+     */
+    private User resolveUser(AuthenticatedUser caller) {
+        return userRepository.findByKeycloakId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }
