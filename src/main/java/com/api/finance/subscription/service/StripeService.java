@@ -1,37 +1,42 @@
 package com.api.finance.subscription.service;
 
-import com.api.finance.config.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Serviço de integração com Stripe.
+ * Integração com Stripe via Checkout Session (modo subscription).
  *
- * Responsável por:
- * 1. Criar payment intents (pagamento único - R$ 19,90 por 30 dias PRO)
- * 2. Criar subscriptions (assinatura recorrente mensal)
- * 3. Buscar dados de payment intents e subscriptions
+ * FLUXO COMPLETO:
+ * 1. Frontend chama  POST /subscriptions/checkout
+ * 2. Este service cria uma Checkout Session no Stripe
+ * 3. Retorna { url } ao frontend
+ * 4. Frontend faz  window.location.href = url
+ * 5. Usuário paga na página hospedada pelo Stripe (cartão, PIX, boleto, etc.)
+ * 6. Stripe redireciona para  successUrl  (ex: /app/subscription?success=true)
+ * 7. Stripe dispara webhook  customer.subscription.updated  →  StripeWebhookService
+ * 8. StripeWebhookService chama  subscriptionService.ativarPro(...)
  *
- * DOIS FLUXOS:
+ * POR QUE CHECKOUT SESSION (e não PaymentIntent diretamente)?
+ * - PaymentIntent retorna um clientSecret que precisa do Stripe Elements no frontend
+ *   (npm install @stripe/stripe-js, form de cartão embutido, tratamento de 3DS...).
+ * - Checkout Session devolve uma URL pronta — o Stripe cuida de tudo (formulário,
+ *   3DS, PIX, boleto, Apple Pay, Google Pay, retry...).
+ * - Para assinaturas recorrentes (mode=subscription), Checkout Session é o fluxo
+ *   oficialmente recomendado pelo Stripe.
  *
- * FLUXO 1 - PAGAMENTO ÚNICO (recomendado para portfólio):
- *   - Cria um payment_intent com amount = 1990 (R$ 19,90 em centavos)
- *   - Frontend usa Stripe Payment Element para coletar cartão
- *   - Após sucesso, webhook "payment_intent.succeeded" ativa PRO por 30 dias
- *   - Simples, sem gestão de assinatura
- *
- * FLUXO 2 - SUBSCRIPTION (mais profissional):
- *   - Cria uma subscription recorrente mensal
- *   - Stripe cobra automaticamente no primeiro dia do mês
- *   - Se falhar, tenta novamente (retry automático)
- *   - Webhook "customer.subscription.updated" renova PRO
- *   - Requer um "plan" (product) pré-criado no Stripe
+ * CONFIGURAÇÃO NECESSÁRIA:
+ *   stripe.api-key   = sk_test_...   (chave secreta, já está no application-dev.yml)
+ *   stripe.price-id  = price_xxx     (criar em dashboard.stripe.com → Products → Prices)
+ *   stripe.frontend-url = https://seusite.com  (para success/cancel URLs)
  */
 @Service
 @RequiredArgsConstructor
@@ -43,146 +48,113 @@ public class StripeService {
     @Value("${stripe.api-key}")
     private String stripeApiKey;
 
-    @Value("${stripe.price-id:#{null}}")  // price_1234567890 (para subscription)
+    @Value("${stripe.price-id}")
     private String stripePriceId;
 
-    // ── Pagamento Único ────────────────────────────────────────────────────
+    @Value("${stripe.frontend-url}")
+    private String frontendUrl;
+
+    private static final String STRIPE_BASE = "https://api.stripe.com/v1";
+
+    // ── Checkout Session ───────────────────────────────────────────────────
 
     /**
-     * Cria um payment_intent para pagamento único de R$ 19,90.
+     * Cria uma Checkout Session para assinatura mensal recorrente (mode=subscription).
      *
-     * Retorna o client_secret que deve ser enviado ao frontend,
-     * onde o usuário completa o pagamento com Stripe Payment Element.
+     * O userId é passado no metadata da session — o webhook
+     * customer.subscription.updated recebe esse metadata e usa para ativar o PRO.
      *
-     * @param userId ID do usuário interno (será armazenado no metadata)
-     * @return client_secret para usar no frontend
+     * @param userId ID do usuário interno
+     * @return URL da página de pagamento hospedada pelo Stripe
      */
-    public String criarPaymentIntent(UUID userId) {
-        log.info("[Stripe] Criando payment_intent para userId={}", userId);
+    public String criarCheckoutSession(UUID userId) {
+        log.info("[Stripe] Criando Checkout Session para userId={}", userId);
+
+        // LinkedHashMap para preservar a ordem dos parâmetros form-encoded
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("mode",                              "subscription");
+        params.put("line_items[0][price]",              stripePriceId);
+        params.put("line_items[0][quantity]",           "1");
+        params.put("success_url",                       frontendUrl + "/app/subscription?success=true");
+        params.put("cancel_url",                        frontendUrl + "/app/subscription?canceled=true");
+        // metadata na session → disponível em checkout.session.completed
+        // e também propagada para a Subscription criada pelo Stripe
+        params.put("subscription_data[metadata][userId]", userId.toString());
+        params.put("metadata[userId]",                  userId.toString());
 
         try {
-            // Prepara os parâmetros da requisição (form-encoded, conforme Stripe API)
-            Map<String, Object> params = Map.ofEntries(
-                    Map.entry("amount", 1990),                 // R$ 19,90 em centavos
-                    Map.entry("currency", "brl"),
-                    Map.entry("description", "FinanceFlow PRO - 30 dias"),
-                    Map.entry("metadata[user_id]", userId.toString()),
-                    Map.entry("metadata[plan_type]", "pro")
-            );
-
-            // Envia requisição POST /v1/payment_intents
             String response = restClient.post()
-                    .uri("https://api.stripe.com/v1/payment_intents")
+                    .uri(STRIPE_BASE + "/checkout/sessions")
                     .header("Authorization", "Bearer " + stripeApiKey)
                     .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
                     .body(buildFormBody(params))
                     .retrieve()
                     .body(String.class);
 
-            // Extrai client_secret da resposta
-            String clientSecret = extractJsonValue(response, "\"client_secret\"");
-            log.info("[Stripe] Payment intent criado: {}", extractJsonValue(response, "\"id\""));
-            return clientSecret;
+            String sessionId  = extractJsonValue(response, "\"id\"");
+            String sessionUrl = extractJsonValue(response, "\"url\"");
+
+            log.info("[Stripe] Checkout Session criada: id={}", sessionId);
+            return sessionUrl;
 
         } catch (Exception e) {
-            log.error("[Stripe] Erro ao criar payment_intent: {}", e.getMessage());
-            throw new RuntimeException("Falha ao criar payment intent no Stripe", e);
+            log.error("[Stripe] Erro ao criar Checkout Session: {}", e.getMessage());
+            throw new RuntimeException("Falha ao criar sessão de pagamento no Stripe", e);
         }
     }
 
-    // ── Assinatura Recorrente (alternativa) ────────────────────────────────
+    // ── Cancelamento ───────────────────────────────────────────────────────
 
     /**
-     * Cria uma subscription no Stripe (pagamento mensal recorrente).
-     *
-     * PREREQUISITO:
-     * - Você deve ter criado um "Price" no Stripe (https://dashboard.stripe.com/prices)
-     * - O price_id dessa configuração em application.yaml (stripe.price-id)
-     * - Exemplo: price_1PxAbCDefGhIjKlMnOpQrSt
-     *
-     * @param customerId ID do cliente Stripe (obtido após primeiro pagamento)
-     * @param userId ID do usuário interno
-     * @return subscription_id do Stripe
-     */
-    public String criarSubscription(String customerId, UUID userId) {
-        log.info("[Stripe] Criando subscription para customerId={} userId={}", customerId, userId);
-
-        if (stripePriceId == null || stripePriceId.isBlank()) {
-            throw new RuntimeException("stripe.price-id não configurado no application.yaml");
-        }
-
-        try {
-            Map<String, Object> params = Map.ofEntries(
-                    Map.entry("customer", customerId),
-                    Map.entry("items[0][price]", stripePriceId),
-                    Map.entry("metadata[user_id]", userId.toString())
-            );
-
-            String response = restClient.post()
-                    .uri("https://api.stripe.com/v1/subscriptions")
-                    .header("Authorization", "Bearer " + stripeApiKey)
-                    .body(buildFormBody(params))
-                    .retrieve()
-                    .body(String.class);
-
-            String subscriptionId = extractJsonValue(response, "\"id\"");
-            log.info("[Stripe] Subscription criada: {}", subscriptionId);
-            return subscriptionId;
-
-        } catch (Exception e) {
-            log.error("[Stripe] Erro ao criar subscription: {}", e.getMessage());
-            throw new RuntimeException("Falha ao criar subscription no Stripe", e);
-        }
-    }
-
-    /**
-     * Cancela uma subscription (revoga acesso PRO).
-     * Stripe mantém o acesso até o final do período vigente (current_period_end).
+     * Cancela uma subscription recorrente no Stripe.
+     * O Stripe mantém o acesso até o fim do período vigente (current_period_end).
+     * O webhook customer.subscription.deleted é disparado ao final do período.
      */
     public void cancelarSubscription(String subscriptionId) {
         log.info("[Stripe] Cancelando subscription id={}", subscriptionId);
 
         try {
             restClient.delete()
-                    .uri("https://api.stripe.com/v1/subscriptions/{id}", subscriptionId)
+                    .uri(STRIPE_BASE + "/subscriptions/{id}", subscriptionId)
                     .header("Authorization", "Bearer " + stripeApiKey)
                     .retrieve()
                     .body(String.class);
 
-            log.info("[Stripe] Subscription cancelada");
+            log.info("[Stripe] Subscription cancelada: {}", subscriptionId);
         } catch (Exception e) {
             log.error("[Stripe] Erro ao cancelar subscription: {}", e.getMessage());
+            // Não propaga — o cancelamento local já foi feito no SubscriptionService
         }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
-    /**
-     * Constrói um form-urlencoded body (tipo application/x-www-form-urlencoded).
-     * Necessário para a API do Stripe.
-     */
     private String buildFormBody(Map<String, Object> params) {
         StringBuilder sb = new StringBuilder();
         params.forEach((key, value) -> {
             if (sb.length() > 0) sb.append("&");
-            sb.append(key).append("=").append(java.net.URLEncoder.encode(value.toString(), java.nio.charset.StandardCharsets.UTF_8));
+            sb.append(URLEncoder.encode(key,   StandardCharsets.UTF_8))
+              .append("=")
+              .append(URLEncoder.encode(value.toString(), StandardCharsets.UTF_8));
         });
         return sb.toString();
     }
 
     /**
-     * Extrai um valor JSON simples do response string.
-     * Para usar com Jackson ObjectMapper em produção.
+     * Extrai um valor string de um JSON usando busca simples por chave.
+     * Suficiente para os campos que precisamos (id, url) sem depender de Jackson.
+     * Nota: não trata arrays nem objetos aninhados — apenas strings de primeiro nível.
      */
     private String extractJsonValue(String json, String key) {
         int idx = json.indexOf(key);
         if (idx < 0) return null;
-        int colonIdx = json.indexOf(":", idx);
+        int colonIdx   = json.indexOf(":", idx + key.length());
         if (colonIdx < 0) return null;
-        int quoteIdx = json.indexOf("\"", colonIdx);
-        if (quoteIdx < 0) return null;
-        int endQuoteIdx = json.indexOf("\"", quoteIdx + 1);
-        if (endQuoteIdx < 0) return null;
-        return json.substring(quoteIdx + 1, endQuoteIdx);
+        // Pula espaços entre ":" e o valor
+        int quoteStart = json.indexOf("\"", colonIdx + 1);
+        if (quoteStart < 0) return null;
+        int quoteEnd   = json.indexOf("\"", quoteStart + 1);
+        if (quoteEnd < 0) return null;
+        return json.substring(quoteStart + 1, quoteEnd);
     }
 }

@@ -58,10 +58,10 @@ public class StripePaymentInitiationService {
         Stripe.apiKey = apiKey;
 
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                        .setAmount(PRECO_PRO_CENTAVOS)
-                        .setCurrency("brl")
-                        .putMetadata("user_id", userId.toString())
-                        .build();
+                .setAmount(PRECO_PRO_CENTAVOS)
+                .setCurrency("brl")
+                .putMetadata("userId", userId.toString())
+                .build();
 
         PaymentIntent intent = PaymentIntent.create(params);
         log.info("[Stripe] PaymentIntent criado: id={} clientSecret={}", intent.getId(), intent.getClientSecret());
@@ -108,10 +108,10 @@ public class StripePaymentInitiationService {
     private Customer obterOuCriarCustomer(UUID userId, String email) throws StripeException {
         // Para simplificar, sempre cria um novo customer
         // Idealmente, você deveria armazenar o stripe_customer_id na tabela User do seu banco
-        
+
         CustomerCreateParams params = CustomerCreateParams.builder()
                 .setEmail(email)
-                .putMetadata("user_id", userId.toString())
+                .putMetadata("userId", userId.toString())
                 .build();
 
         return Customer.create(params);
