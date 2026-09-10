@@ -3,6 +3,7 @@ package com.api.finance.transaction.service;
 import com.api.finance.account.exception.AccountNotFoundException;
 import com.api.finance.account.model.Account;
 import com.api.finance.account.repository.AccountRepository;
+import com.api.finance.budget.service.BudgetService;
 import com.api.finance.category.model.Category;
 import com.api.finance.category.repository.CategoryRepository;
 import com.api.finance.category.service.CategoryService;
@@ -47,6 +48,7 @@ public class TransactionService {
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
     private final ApplicationEventPublisher eventPublisher;  // NOVO
+    private final BudgetService budgetService;  // FIX: recalcula orçamento após mudanças em transações
 
     @Transactional(readOnly = true)
     public Page<TransactionResponse> listar(LocalDate de, LocalDate ate, Pageable pageable, AuthenticatedUser caller) {
@@ -127,6 +129,10 @@ public class TransactionService {
             ));
         }
 
+        // FIX: orçamentos guardam valorGasto persistido (não é calculado on-the-fly),
+        // então toda mudança em transação precisa recalcular o mês/ano afetado.
+        recalcularOrcamentoSeNecessario(userId, req.tipo(), status, req.data());
+
         return TransactionResponse.de(saved);
     }
 
@@ -146,6 +152,12 @@ public class TransactionService {
             reverterSaldo(account, trx.getTipo(), trx.getValor());
             accountRepository.save(account);
         }
+
+        // Guarda estado anterior para recalcular o orçamento do período antigo também,
+        // caso a transação tenha mudado de mês/tipo/status na edição.
+        TransactionType tipoAntigo = trx.getTipo();
+        TransactionStatus statusAntigo = trx.getStatus();
+        LocalDate dataAntiga = trx.getData();
 
         Category category = resolveCategoria(req.categoryId(), req.estabelecimento(), userId);
         trx.setCategory(category);
@@ -179,6 +191,11 @@ public class TransactionService {
             ));
         }
 
+        // FIX: recalcula o orçamento do período antigo (caso a transação tenha "saído" dele)
+        // e do período novo (caso tenha "entrado" nele ou apenas mudado de valor/categoria).
+        recalcularOrcamentoSeNecessario(userId, tipoAntigo, statusAntigo, dataAntiga);
+        recalcularOrcamentoSeNecessario(userId, req.tipo(), req.status(), req.data());
+
         return TransactionResponse.de(saved);
     }
 
@@ -198,9 +215,27 @@ public class TransactionService {
 
         transactionRepository.delete(trx);
         log.info("Transação removida: id={} user={}", id, userId);
+
+        // FIX: o orçamento do período da transação removida precisa refletir a remoção.
+        recalcularOrcamentoSeNecessario(userId, trx.getTipo(), trx.getStatus(), trx.getData());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    /**
+     * FIX: Budget.valorGasto é um campo persistido, não calculado on-the-fly —
+     * por isso toda mudança em transação de DESPESA precisa recalcular o orçamento
+     * do mês/ano afetado, ou o valorGasto fica desatualizado e os alertas de
+     * orçamento (BudgetAlertScheduler) nunca disparam corretamente.
+     *
+     * Só recalcula para DESPESA, já que orçamentos só somam despesas confirmadas
+     * (ver TransactionRepository.sumDespesaByCategoria).
+     */
+    private void recalcularOrcamentoSeNecessario(UUID userId, TransactionType tipo, TransactionStatus status, LocalDate data) {
+        if (tipo == TransactionType.DESPESA && status == TransactionStatus.CONFIRMADA && data != null) {
+            budgetService.recalcularGastos(userId, data.getMonthValue(), data.getYear());
+        }
+    }
 
     private void ajustarSaldo(Account account, TransactionType tipo, BigDecimal valor) {
         if (tipo == TransactionType.RECEITA) {
