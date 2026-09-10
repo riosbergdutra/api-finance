@@ -41,6 +41,23 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("de") LocalDate de,
             @Param("ate") LocalDate ate);
 
+    /**
+     * FIX: usada por orçamentos gerais (category = null), que devem somar TODAS
+     * as despesas do usuário no período, independente da categoria.
+     * Antes não existia, e BudgetService.calcularGasto() retornava sempre ZERO
+     * quando categoryId era null — orçamento geral nunca refletia gasto real.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(t.valor), 0) FROM Transaction t
+        WHERE t.userId = :userId
+          AND t.tipo = 'DESPESA' AND t.status = 'CONFIRMADA'
+          AND t.data BETWEEN :de AND :ate
+        """)
+    BigDecimal sumDespesaTotal(
+            @Param("userId") UUID userId,
+            @Param("de") LocalDate de,
+            @Param("ate") LocalDate ate);
+
     @Query("""
         SELECT COALESCE(SUM(t.valor), 0) FROM Transaction t
         WHERE t.userId = :userId AND t.tipo = 'RECEITA' AND t.status = 'CONFIRMADA'
