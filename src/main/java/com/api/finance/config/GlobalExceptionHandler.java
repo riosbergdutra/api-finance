@@ -5,7 +5,11 @@ import com.api.finance.account.exception.DuplicateAccountNameException;
 import com.api.finance.bff.dto.ErrorResponseDTO;
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
+import com.api.finance.budget.exception.BudgetNotFoundException;
+import com.api.finance.category.exception.CategoryNotFoundException;
+import com.api.finance.goal.exception.GoalNotFoundException;
 import com.api.finance.shared.exception.ResourceNotFoundException;
+import com.api.finance.transaction.exception.TransactionNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -84,6 +88,33 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleAccountNotFound(AccountNotFoundException ex) {
         // Mensagem vaga intencionalmente — não confirma existência do recurso para outros usuários
         return buildResponse("Conta não encontrada.", HttpStatus.NOT_FOUND);
+    }
+
+    /*
+     * FIX: as 4 exceptions abaixo já têm @ResponseStatus(NOT_FOUND) na própria classe,
+     * então o Spring devolvia 404 mesmo sem handler aqui — mas usando o formato de erro
+     * padrão do Spring Boot (campos timestamp/status/error/path), diferente do
+     * ErrorResponseDTO usado em todo o resto da API. Isso quebrava qualquer client que
+     * esperasse um contrato de erro único. Os handlers abaixo padronizam a resposta.
+     */
+    @ExceptionHandler(CategoryNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> handleCategoryNotFound(CategoryNotFoundException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(GoalNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> handleGoalNotFound(GoalNotFoundException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(BudgetNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> handleBudgetNotFound(BudgetNotFoundException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(TransactionNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> handleTransactionNotFound(TransactionNotFoundException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
     }
 
     // ── 409 ────────────────────────────────────────────────────────────────
