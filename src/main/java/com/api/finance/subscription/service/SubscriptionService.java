@@ -1,6 +1,7 @@
 package com.api.finance.subscription.service;
 
 import com.api.finance.config.AuthenticatedUser;
+import com.api.finance.events.FinanceEvents;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.service.NotificationService;
 import com.api.finance.shared.exception.ResourceNotFoundException;
@@ -10,9 +11,11 @@ import com.api.finance.subscription.model.PlanType;
 import com.api.finance.subscription.model.Subscription;
 import com.api.finance.subscription.model.SubscriptionStatus;
 import com.api.finance.subscription.repository.SubscriptionRepository;
+import com.api.finance.user.model.User;
 import com.api.finance.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +52,7 @@ public class SubscriptionService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final StripeService stripeService;
+    private final ApplicationEventPublisher eventPublisher;  // FIX: publica eventos de domínio, seguindo o mesmo padrão usado em TransactionService/GoalService
 
     // ── Consulta ─────────────────────────────────────────────────────────
 
@@ -128,14 +132,13 @@ public class SubscriptionService {
 
         log.info("[Subscription] PRO ativado: userId={} até={}", userId, fim);
 
-        // Notifica o usuário
-        notificationService.criarNotificacao(
-                null,
-                userId,
-                NotificationType.SUBSCRIPTION_ACTIVATED,
-                "Parabéns! Você agora é um usuário PRO até " + fim,
-                null
-        );
+        // FIX: antes chamava notificationService.criarNotificacao(...) passando o título
+        // como se fosse a assinatura de 5 argumentos (keycloakId, userId, tipo, titulo, mensagem),
+        // mas só 1 string era passada — a mensagem real da notificação ficava null.
+        // Agora segue o mesmo padrão de evento usado em TransactionService/GoalService:
+        // o NotificationEventListener já trata ProAtivadoEvent corretamente.
+        String keycloakId = resolveKeycloakId(userId);
+        eventPublisher.publishEvent(new FinanceEvents.ProAtivadoEvent(keycloakId, userId, fim));
     }
 
     /**
@@ -146,8 +149,8 @@ public class SubscriptionService {
     public void cancelarSubscricao(UUID userId) {
         Subscription sub = subscriptionRepository.findByUserId(userId)
                 .orElseThrow(() ->
-                ResourceNotFoundException.of("Subscription", userId)
-        );
+                        ResourceNotFoundException.of("Subscription", userId)
+                );
 
         // Se tem subscription_id no Stripe, cancela lá
         if (sub.getStripeSubscriptionId() != null && !sub.getStripeSubscriptionId().isBlank()) {
@@ -161,13 +164,16 @@ public class SubscriptionService {
 
         log.info("[Subscription] Assinatura cancelada: userId={}", userId);
 
-        // Notifica o usuário
+        // FIX: mesma correção — título e mensagem agora são passados como argumentos
+        // separados, e o keycloakId real é resolvido (antes era passado null, então
+        // a notificação nunca chegava via WebSocket, só ficava persistida).
+        String keycloakId = resolveKeycloakId(userId);
         notificationService.criarNotificacao(
-                null,
+                keycloakId,
                 userId,
                 NotificationType.SUBSCRIPTION_CANCELED,
-                "Sua assinatura PRO foi cancelada. Você voltou ao plano FREE.",
-                null
+                "Assinatura PRO cancelada",
+                "Sua assinatura PRO foi cancelada. Você voltou ao plano FREE."
         );
     }
 
@@ -186,14 +192,10 @@ public class SubscriptionService {
             subscriptionRepository.save(sub);
             log.info("[Subscription] PRO expirado: userId={}", sub.getUserId());
 
-            // Notifica o usuário que PRO expirou
-            notificationService.criarNotificacao(
-                    null,
-                    sub.getUserId(),
-                    NotificationType.SUBSCRIPTION_EXPIRED,
-                    "Sua assinatura PRO expirou. Você voltou ao plano FREE.",
-                    null
-            );
+            // FIX: publica o evento já tratado pelo NotificationEventListener
+            // (antes chamava criarNotificacao com argumentos errados e keycloakId=null).
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(new FinanceEvents.AssinaturaExpiradaEvent(keycloakId, sub.getUserId()));
         });
     }
 
@@ -220,5 +222,18 @@ public class SubscriptionService {
      */
     private UUID resolveUserId(AuthenticatedUser caller) {
         return caller.id();
+    }
+
+    /**
+     * FIX: resolve o keycloakId (necessário para o push via WebSocket) a partir
+     * do userId interno. Sem isso, os métodos de ativação/cancelamento/expiração
+     * não tinham como popular esse campo e passavam null — a notificação
+     * acabava só persistida no banco, nunca chegando em tempo real ao usuário.
+     */
+    private String resolveKeycloakId(UUID userId) {
+        return userRepository.findById(userId)
+                .map(User::getKeycloakId)
+                .map(Object::toString)
+                .orElse(null);
     }
 }
