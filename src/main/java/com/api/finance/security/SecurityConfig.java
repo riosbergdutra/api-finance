@@ -43,11 +43,17 @@ public class SecurityConfig {
                         // Documentação da API
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // BFF auth — sem JWT (recebe authorization code do Keycloak)
-                        .requestMatchers(HttpMethod.GET, "/auth/login", "auth/callback").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout", "auth/callback").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout", "/auth/callback").permitAll()
+                        // Logout do BFF é autenticado pelo cookie/JWT do próprio usuário
+                        .requestMatchers(HttpMethod.DELETE, "/auth/me").authenticated()
                         // WebSocket — autenticado via query param token (não Bearer header)
                         .requestMatchers("/ws/**").permitAll()
                         // Módulos de negócio — JWT obrigatório
+                        // OBS: UserController expõe seus endpoints sob "/api/users/**" (prefixo "/api"
+                        // diferente dos demais controllers). Os dois matchers abaixo cobrem tanto o
+                        // path real do controller quanto o padrão "/users/**" usado pelos demais módulos.
+                        .requestMatchers("/api/users/**").authenticated()
                         .requestMatchers("/users/**").authenticated()
                         .requestMatchers("/accounts/**").authenticated()
                         .requestMatchers("/transactions/**").authenticated()
@@ -57,7 +63,7 @@ public class SecurityConfig {
                         .requestMatchers("/notifications/**").authenticated()
                         .requestMatchers("/dashboard/**").authenticated()
                         .requestMatchers("/subscriptions/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/webhooks/mercadopago").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/webhooks/mercadopago", "/webhooks/stripe").permitAll()
                         .requestMatchers("/export/**").authenticated()
                         .requestMatchers("/open-finance/**").authenticated()
                         // FAIL-SAFE: bloqueia qualquer rota não mapeada explicitamente
