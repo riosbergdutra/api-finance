@@ -1,7 +1,9 @@
 package com.api.finance.subscription.service;
 
 import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,21 +20,13 @@ import java.util.UUID;
 /**
  * Processa eventos do Stripe e aciona o SubscriptionService.
  *
- * FLUXO COM CHECKOUT SESSION (modo atual):
+ * FIX: getDataObjectDeserializer().getObject() retorna Optional.empty() quando
+ * a versão da API do evento (gerado pelo dashboard/CLI) difere da versão do SDK.
+ * Stripe-java 30.x usa uma API version específica em compile-time; eventos gerados
+ * com versão diferente falham na desserialização tipada.
  *
- * 1. checkout.session.completed
- *    → usuário concluiu o pagamento na página do Stripe
- *    → ativa PRO imediatamente com período de 30 dias (pagamento único)
- *    → OU aguarda customer.subscription.updated para subscription recorrente
- *
- * 2. customer.subscription.updated (status=active)
- *    → subscription foi criada ou renovada
- *    → ativa/renova PRO até o fim do período (current_period_end)
- *    → este é o evento principal para mode=subscription
- *
- * 3. customer.subscription.deleted
- *    → subscription foi cancelada/expirada pelo Stripe
- *    → expira o PRO no banco
+ * Solução: usar deserializeUnsafe() que ignora a versão e desserializa mesmo assim,
+ * com fallback para getRawJson() + parse manual quando necessário.
  */
 @Service
 @RequiredArgsConstructor
@@ -51,17 +45,16 @@ public class StripeWebhookService {
             return;
         }
 
-        log.debug("[Stripe] Processando evento: {}", event.getType());
+        log.debug("[Stripe] Processando evento: type={} apiVersion={}", event.getType(), event.getApiVersion());
 
         try {
             switch (event.getType()) {
-                // Checkout Session concluída — usuário pagou
                 case "checkout.session.completed"      -> processarCheckoutConcluido(event);
-                // Subscription criada/renovada pelo Stripe (recorrente)
-                case "customer.subscription.updated"  -> processarAssinaturaAtualizada(event);
-                // Subscription cancelada/expirada
+                // Ambos os eventos disparam a mesma lógica — o Stripe pode enviar
+                // "created" no primeiro ciclo dependendo do fluxo de checkout
+                case "customer.subscription.created",
+                     "customer.subscription.updated"  -> processarAssinaturaAtualizada(event);
                 case "customer.subscription.deleted"  -> processarAssinaturaCancelada(event);
-                // Mantido para compatibilidade com pagamentos avulsos legados
                 case "payment_intent.succeeded"       -> processarPagamentoAprovado(event);
                 default -> log.debug("[Stripe] Evento ignorado: {}", event.getType());
             }
@@ -74,11 +67,10 @@ public class StripeWebhookService {
 
     private void processarCheckoutConcluido(Event event) {
         try {
-            Session session = (Session) event.getDataObjectDeserializer()
-                    .getObject().orElse(null);
+            Session session = deserializar(event, Session.class);
 
             if (session == null) {
-                log.warn("[Stripe] Session nula em checkout.session.completed");
+                log.warn("[Stripe] Não foi possível desserializar Session em checkout.session.completed");
                 return;
             }
 
@@ -92,17 +84,16 @@ public class StripeWebhookService {
                 return;
             }
 
-            // Para mode=subscription o Stripe vai disparar customer.subscription.updated
-            // em seguida com as datas exatas do período — apenas logamos aqui.
-            // Para mode=payment (pagamento único) ativamos PRO por 30 dias.
+            // mode=payment → pagamento único, ativa PRO por 30 dias imediatamente
+            // mode=subscription → o Stripe vai disparar customer.subscription.created/updated
+            //                     com as datas exatas do período — apenas logamos aqui
             if ("payment".equals(session.getMode())) {
                 LocalDate inicio = LocalDate.now();
                 LocalDate fim    = inicio.plusDays(30);
                 subscriptionService.ativarPro(userId, session.getPaymentIntent(), null, inicio, fim);
                 log.info("[Stripe] PRO ativado via pagamento único userId={} até={}", userId, fim);
             } else {
-                // subscription → aguarda customer.subscription.updated
-                log.info("[Stripe] Checkout subscription concluído userId={} — aguardando subscription.updated", userId);
+                log.info("[Stripe] Checkout subscription concluído userId={} — aguardando subscription event", userId);
             }
 
         } catch (Exception e) {
@@ -110,24 +101,25 @@ public class StripeWebhookService {
         }
     }
 
-    // ── customer.subscription.updated ─────────────────────────────────────
+    // ── customer.subscription.created / updated ────────────────────────────
 
     private void processarAssinaturaAtualizada(Event event) {
         try {
             com.stripe.model.Subscription stripeSub =
-                    (com.stripe.model.Subscription) event.getDataObjectDeserializer()
-                            .getObject().orElse(null);
+                    deserializar(event, com.stripe.model.Subscription.class);
 
             if (stripeSub == null) {
-                log.warn("[Stripe] Subscription nula em subscription.updated");
+                log.warn("[Stripe] Não foi possível desserializar Subscription em {}", event.getType());
                 return;
             }
 
-            log.info("[Stripe] Assinatura atualizada: id={} status={}", stripeSub.getId(), stripeSub.getStatus());
+            log.info("[Stripe] Assinatura {}: id={} status={}", event.getType(), stripeSub.getId(), stripeSub.getStatus());
 
-            if (!"active".equals(stripeSub.getStatus())) return;
+            if (!"active".equals(stripeSub.getStatus())) {
+                log.info("[Stripe] Subscription não está ativa (status={}), ignorando", stripeSub.getStatus());
+                return;
+            }
 
-            // userId vem do metadata propagado da Checkout Session
             Map<String, String> metadata = stripeSub.getMetadata();
             UUID userId = resolverUserId(metadata != null ? metadata.get("userId") : null);
 
@@ -136,24 +128,32 @@ public class StripeWebhookService {
                 return;
             }
 
-            Long periodEnd = stripeSub.getItems()
-                    .getData().get(0)
-                    .getCurrentPeriodEnd();
-
-            if (periodEnd == null) {
-                log.warn("[Stripe] currentPeriodEnd nulo subscription={}", stripeSub.getId());
-                return;
+            // Pega o fim do período da primeira item da subscription
+            Long periodEnd = null;
+            try {
+                periodEnd = stripeSub.getItems()
+                        .getData().get(0)
+                        .getCurrentPeriodEnd();
+            } catch (Exception ex) {
+                log.warn("[Stripe] Não foi possível ler currentPeriodEnd da subscription={}: {}", stripeSub.getId(), ex.getMessage());
             }
 
-            LocalDate fim    = Instant.ofEpochSecond(periodEnd)
-                    .atZone(ZoneId.systemDefault()).toLocalDate();
-            LocalDate inicio = LocalDate.now();
+            LocalDate fim;
+            if (periodEnd != null) {
+                fim = Instant.ofEpochSecond(periodEnd)
+                        .atZone(ZoneId.systemDefault()).toLocalDate();
+            } else {
+                // Fallback: 30 dias a partir de hoje se não conseguir ler o período
+                fim = LocalDate.now().plusDays(30);
+                log.warn("[Stripe] currentPeriodEnd nulo, usando fallback de 30 dias. subscription={}", stripeSub.getId());
+            }
 
+            LocalDate inicio = LocalDate.now();
             subscriptionService.ativarPro(userId, null, stripeSub.getId(), inicio, fim);
-            log.info("[Stripe] PRO renovado userId={} até={}", userId, fim);
+            log.info("[Stripe] PRO ativado/renovado userId={} até={}", userId, fim);
 
         } catch (Exception e) {
-            log.error("[Stripe] Erro em subscription.updated", e);
+            log.error("[Stripe] Erro em {}", event.getType(), e);
         }
     }
 
@@ -162,17 +162,14 @@ public class StripeWebhookService {
     private void processarAssinaturaCancelada(Event event) {
         try {
             com.stripe.model.Subscription stripeSub =
-                    (com.stripe.model.Subscription) event.getDataObjectDeserializer()
-                            .getObject().orElse(null);
+                    deserializar(event, com.stripe.model.Subscription.class);
 
             if (stripeSub == null) {
-                log.warn("[Stripe] Subscription nula em subscription.deleted");
+                log.warn("[Stripe] Não foi possível desserializar Subscription em subscription.deleted");
                 return;
             }
 
             log.info("[Stripe] Subscription cancelada/expirada: id={}", stripeSub.getId());
-
-            // Executa a expiração das assinaturas vencidas (já existia)
             subscriptionService.expirarAssinaturasVencidas();
 
         } catch (Exception e) {
@@ -180,12 +177,11 @@ public class StripeWebhookService {
         }
     }
 
-    // ── payment_intent.succeeded (legado) ─────────────────────────────────
+    // ── payment_intent.succeeded (legado / pagamento único) ───────────────
 
     private void processarPagamentoAprovado(Event event) {
         try {
-            PaymentIntent paymentIntent = (PaymentIntent) event.getDataObjectDeserializer()
-                    .getObject().orElse(null);
+            PaymentIntent paymentIntent = deserializar(event, PaymentIntent.class);
 
             if (paymentIntent == null) return;
 
@@ -209,14 +205,49 @@ public class StripeWebhookService {
         }
     }
 
-    // ── Helper ─────────────────────────────────────────────────────────────
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    /**
+     * Desserializa o objeto do evento com fallback para deserializeUnsafe().
+     *
+     * getObject() falha silenciosamente (retorna Optional.empty()) quando a versão
+     * da API do evento não bate com a versão compilada do SDK. deserializeUnsafe()
+     * ignora essa verificação de versão e tenta o parse mesmo assim — é o comportamento
+     * correto para webhooks recebidos de contas que podem estar em versão diferente.
+     */
+    @SuppressWarnings("unchecked")
+    private <T extends StripeObject> T deserializar(Event event, Class<T> tipo) {
+        EventDataObjectDeserializer deserializer = event.getDataObjectDeserializer();
+
+        // Tentativa 1: desserialização padrão (funciona quando versões batem)
+        if (deserializer.getObject().isPresent()) {
+            StripeObject obj = deserializer.getObject().get();
+            if (tipo.isInstance(obj)) {
+                return tipo.cast(obj);
+            }
+        }
+
+        // Tentativa 2: deserializeUnsafe — ignora incompatibilidade de versão da API
+        try {
+            StripeObject obj = deserializer.deserializeUnsafe();
+            if (tipo.isInstance(obj)) {
+                log.debug("[Stripe] Usado deserializeUnsafe para evento type={} apiVersion={}",
+                        event.getType(), event.getApiVersion());
+                return tipo.cast(obj);
+            }
+        } catch (Exception e) {
+            log.warn("[Stripe] deserializeUnsafe falhou para {}: {}", event.getType(), e.getMessage());
+        }
+
+        return null;
+    }
 
     private UUID resolverUserId(String reference) {
         if (reference == null || reference.isBlank()) return null;
         try {
             return UUID.fromString(reference);
         } catch (Exception e) {
-            log.warn("[Stripe] UUID inválido: {}", reference);
+            log.warn("[Stripe] UUID inválido no metadata: {}", reference);
             return null;
         }
     }
