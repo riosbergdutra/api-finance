@@ -119,11 +119,16 @@ public class BudgetService {
      * Calcula gasto usando intervalo de datas (LocalDate) em vez de MONTH()/YEAR().
      * MONTH() e YEAR() são funções do MySQL — não funcionam no PostgreSQL.
      * A query correta usa BETWEEN com primeiro e último dia do mês.
+     *
+     * FIX: orçamento geral (categoryId == null) agora soma TODAS as despesas do
+     * período, em vez de retornar sempre ZERO.
      */
     private BigDecimal calcularGasto(UUID userId, UUID categoryId, int mes, int ano) {
-        if (categoryId == null) return BigDecimal.ZERO;
         LocalDate inicio = LocalDate.of(ano, mes, 1);
         LocalDate fim = inicio.withDayOfMonth(inicio.lengthOfMonth());
+        if (categoryId == null) {
+            return transactionRepository.sumDespesaTotal(userId, inicio, fim);
+        }
         return transactionRepository.sumDespesaByCategoria(userId, categoryId, inicio, fim);
     }
 
