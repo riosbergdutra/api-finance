@@ -6,6 +6,18 @@ import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.user.repository.UserRepository;
+import com.itextpdf.kernel.colors.ColorConstants;
+import com.itextpdf.kernel.colors.DeviceRgb;
+import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfWriter;
+import com.itextpdf.layout.Document;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.element.Cell;
+import com.itextpdf.layout.element.Paragraph;
+import com.itextpdf.layout.element.Table;
+import com.itextpdf.layout.properties.HorizontalAlignment;
+import com.itextpdf.layout.properties.TextAlignment;
+import com.itextpdf.layout.properties.UnitValue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -15,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -50,7 +63,7 @@ public class ExportService {
             Row header = sheet.createRow(0);
             String[] colunas = {"Data", "Descrição", "Estabelecimento", "Tipo", "Status", "Valor (R$)", "Categoria"};
             for (int i = 0; i < colunas.length; i++) {
-                Cell cell = header.createCell(i);
+                org.apache.poi.ss.usermodel.Cell cell = header.createCell(i);
                 cell.setCellValue(colunas[i]);
                 cell.setCellStyle(headerStyle);
             }
@@ -66,7 +79,7 @@ public class ExportService {
                 row.createCell(3).setCellValue(trx.getTipo().name());
                 row.createCell(4).setCellValue(trx.getStatus().name());
 
-                Cell valorCell = row.createCell(5);
+                org.apache.poi.ss.usermodel.Cell valorCell = row.createCell(5);
                 valorCell.setCellValue(trx.getValor().doubleValue());
                 valorCell.setCellStyle(moedaStyle);
 
@@ -74,7 +87,6 @@ public class ExportService {
                         trx.getCategory() != null ? trx.getCategory().getNome() : "Sem categoria");
             }
 
-            // Ajusta largura das colunas
             for (int i = 0; i < colunas.length; i++) {
                 sheet.autoSizeColumn(i);
             }
@@ -97,34 +109,112 @@ public class ExportService {
 
         List<Transaction> transacoes = buscarTransacoes(userId, de, ate);
 
-        // TODO: implementar com iText ou OpenPDF
-        // Exemplo básico com OpenPDF:
-        // Document document = new Document();
-        // ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // PdfWriter.getInstance(document, out);
-        // document.open();
-        // document.add(new Paragraph("Relatório de Transações — " + de.format(BR_DATE) + " a " + ate.format(BR_DATE)));
-        //
-        // PdfPTable table = new PdfPTable(6);
-        // // adicionar cabeçalho e linhas...
-        //
-        // document.add(table);
-        // document.close();
-        // return out.toByteArray();
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream();
+             PdfWriter writer = new PdfWriter(out);
+             PdfDocument pdfDoc = new PdfDocument(writer);
+             Document document = new Document(pdfDoc)) {
 
-        log.info("[Export] PDF solicitado: userId={} de={} ate={} — não implementado", userId, de, ate);
-        throw new UnsupportedOperationException(
-            "Exportação PDF não implementada. Adicione OpenPDF ou iText ao pom.xml " +
-            "e implemente o corpo do método gerarPdf() em ExportService. " +
-            "Ver comentários no método para exemplo.");
+            document.add(new Paragraph("Relatório de Transações")
+                    .setBold()
+                    .setFontSize(18));
+
+            document.add(new Paragraph(
+                    "Período: " + de.format(BR_DATE) + " a " + ate.format(BR_DATE))
+                    .setFontSize(10)
+                    .setFontColor(ColorConstants.GRAY)
+                    .setMarginBottom(15));
+
+            BigDecimal totalReceitas = somarPorTipo(transacoes, com.api.finance.transaction.model.TransactionType.RECEITA);
+            BigDecimal totalDespesas = somarPorTipo(transacoes, com.api.finance.transaction.model.TransactionType.DESPESA);
+            BigDecimal saldo = totalReceitas.subtract(totalDespesas);
+
+            Table resumo = new Table(UnitValue.createPercentArray(new float[]{1, 1, 1}))
+                    .useAllAvailableWidth()
+                    .setMarginBottom(20);
+            resumo.addCell(celulaResumo("Receitas", totalReceitas, new DeviceRgb(22, 163, 74)));
+            resumo.addCell(celulaResumo("Despesas", totalDespesas, new DeviceRgb(220, 38, 38)));
+            resumo.addCell(celulaResumo("Saldo", saldo,
+                    saldo.signum() < 0 ? new DeviceRgb(220, 38, 38) : new DeviceRgb(22, 163, 74)));
+            document.add(resumo);
+
+            float[] larguras = {1.5f, 3f, 2.5f, 1.5f, 1.5f, 1.8f, 2f};
+            Table tabela = new Table(UnitValue.createPercentArray(larguras)).useAllAvailableWidth();
+
+            String[] colunas = {"Data", "Descrição", "Estabelecimento", "Tipo", "Status", "Valor (R$)", "Categoria"};
+            for (String coluna : colunas) {
+                tabela.addHeaderCell(
+                        new Cell().add(new Paragraph(coluna).setBold().setFontColor(ColorConstants.WHITE))
+                                .setBackgroundColor(new DeviceRgb(30, 41, 59))
+                                .setPadding(5));
+            }
+
+            for (Transaction trx : transacoes) {
+                boolean despesa = trx.getTipo() == com.api.finance.transaction.model.TransactionType.DESPESA;
+                tabela.addCell(celula(trx.getData().format(BR_DATE)));
+                tabela.addCell(celula(trx.getDescricao() != null ? trx.getDescricao() : ""));
+                tabela.addCell(celula(trx.getEstabelecimento() != null ? trx.getEstabelecimento() : ""));
+                tabela.addCell(celula(trx.getTipo().name()));
+                tabela.addCell(celula(trx.getStatus().name()));
+                tabela.addCell(
+                        new Cell().add(new Paragraph((despesa ? "-" : "") + formatarMoeda(trx.getValor()))
+                                        .setFontColor(despesa ? new DeviceRgb(220, 38, 38) : new DeviceRgb(22, 163, 74)))
+                                .setTextAlignment(TextAlignment.RIGHT)
+                                .setPadding(4)
+                                .setBorder(Border.NO_BORDER));
+                tabela.addCell(celula(trx.getCategory() != null ? trx.getCategory().getNome() : "Sem categoria"));
+            }
+
+            document.add(tabela);
+
+            if (transacoes.isEmpty()) {
+                document.add(new Paragraph("Nenhuma transação encontrada no período selecionado.")
+                        .setFontColor(ColorConstants.GRAY)
+                        .setTextAlignment(TextAlignment.CENTER)
+                        .setMarginTop(10));
+            }
+
+            document.close();
+            log.info("[Export] PDF gerado: userId={} transações={}", userId, transacoes.size());
+            return out.toByteArray();
+
+        } catch (Exception e) {
+            log.error("[Export] Erro ao gerar PDF: userId={}", userId, e);
+            throw new RuntimeException("Erro ao gerar PDF: " + e.getMessage(), e);
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private List<Transaction> buscarTransacoes(UUID userId, LocalDate de, LocalDate ate) {
-        // Busca todas as transações do período (sem paginação — export é completo)
         return transactionRepository.findByUserIdAndPeriodo(
                 userId, de, ate, PageRequest.of(0, Integer.MAX_VALUE)).getContent();
+    }
+
+    private BigDecimal somarPorTipo(List<Transaction> transacoes, com.api.finance.transaction.model.TransactionType tipo) {
+        return transacoes.stream()
+                .filter(t -> t.getTipo() == tipo)
+                .filter(t -> t.getStatus() == com.api.finance.transaction.model.TransactionStatus.CONFIRMADA)
+                .map(Transaction::getValor)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String formatarMoeda(BigDecimal valor) {
+        return String.format(new java.util.Locale("pt", "BR"), "R$ %,.2f", valor);
+    }
+
+    private Cell celula(String texto) {
+        return new Cell().add(new Paragraph(texto)).setPadding(4).setBorder(Border.NO_BORDER);
+    }
+
+    private Cell celulaResumo(String label, BigDecimal valor, DeviceRgb cor) {
+        return new Cell()
+                .add(new Paragraph(label).setFontSize(9).setFontColor(ColorConstants.GRAY))
+                .add(new Paragraph(formatarMoeda(valor)).setBold().setFontColor(cor).setFontSize(13))
+                .setHorizontalAlignment(HorizontalAlignment.CENTER)
+                .setTextAlignment(TextAlignment.CENTER)
+                .setBackgroundColor(new DeviceRgb(248, 250, 252))
+                .setPadding(10)
+                .setBorder(Border.NO_BORDER);
     }
 
     private CellStyle criarEstiloCabecalho(Workbook workbook) {
@@ -144,8 +234,18 @@ public class ExportService {
         return style;
     }
 
+    /**
+     * FIX: retorna caller.id() diretamente (keycloakId vindo do jwt.getSubject()).
+     *
+     * A tabela subscription usa o keycloakId como user_id — o mesmo padrão de
+     * AccountService, TransactionService e todos os outros services do projeto.
+     *
+     * O código anterior fazia findIdByKeycloakId(caller.id()), que retornava o
+     * UUID interno da tabela users — um valor diferente do que está salvo em
+     * subscription.user_id, fazendo o assertIsPro nunca encontrar a subscription
+     * correta e sempre criar uma FREE nova, bloqueando usuários PRO com 402.
+     */
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
-                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
+        return caller.id();
     }
 }
