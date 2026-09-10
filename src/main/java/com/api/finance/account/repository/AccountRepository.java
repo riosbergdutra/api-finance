@@ -61,4 +61,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      * Contagem de contas ativas — usada para limitar criação (ex: plano freemium).
      */
     long countByUserIdAndActiveTrue(UUID userId);
+
+    /** Soma do saldo de todas as contas ativas — usado pelo Dashboard. */
+    @Query("SELECT COALESCE(SUM(a.balance), 0) FROM Account a WHERE a.userId = :userId AND a.active = true")
+    java.math.BigDecimal sumBalanceByUserId(@Param("userId") UUID userId);
 }
