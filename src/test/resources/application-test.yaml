@@ -38,4 +38,5 @@ stripe:
   webhook-secret: whsec_ci_placeholder
   mode: test
 
+spring.security.oauth2.client.provider.keycloak.issuer-uri: http://localhost:8180/realms/financeflow
 spring.task.scheduling.enabled: false
