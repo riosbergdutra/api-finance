@@ -33,7 +33,7 @@ public class AuthController {
     @Value("${app.cookies.same-site:Lax}")
     private String cookieSameSite;
 
-    @Value("${app.frontend-url}")
+    @Value("${app.frontend-url:http://localhost:4200}")
     private String frontendUrl;
 
     @GetMapping("/session")
