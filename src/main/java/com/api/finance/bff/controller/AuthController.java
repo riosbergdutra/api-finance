@@ -2,6 +2,7 @@ package com.api.finance.bff.controller;
 
 import com.api.finance.bff.dto.AuthResponseDTO; // IMPORT CORRETO
 import com.api.finance.bff.service.AuthService;
+import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -14,6 +15,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
+import java.net.URI;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/auth")
@@ -25,21 +28,32 @@ public class AuthController {
     @Value("${app.cookies.secure:true}")
     private boolean secureCookies;
 
+    @Value("${stripe.frontend-url}")
+    private String frontendUrl;
+
     @GetMapping("/login")
-    public ResponseEntity<Void> login() {
-        return ResponseEntity.status(HttpStatus.FOUND) // 302
-                .header(HttpHeaders.LOCATION, authService.gerarUrlLogin())
+    public ResponseEntity<Void> login(HttpServletResponse response) {
+        String flowId = UUID.randomUUID().toString();
+        OAuthLoginAttemptStore.LoginAttempt attempt = authService.iniciarLogin(flowId);
+        adicionarFlowCookie(response, flowId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, authService.gerarUrlLogin(attempt))
                 .build();
     }
 
-    // Keycloak redireciona via GET por padrão
-    @PostMapping("/callback")
-    public ResponseEntity<AuthResponseDTO> callback(@RequestParam String code, HttpServletResponse response) {
-        AuthResponseDTO authResponse = authService.login(code);
-
+    // O callback é concluído no BFF; o navegador nunca recebe authorization code ou tokens.
+    @GetMapping("/callback")
+    public ResponseEntity<Void> callback(
+            @RequestParam String code,
+            @RequestParam String state,
+            @CookieValue(name = "OAUTH_FLOW", required = false) String flowId,
+            HttpServletResponse response) {
+        AuthResponseDTO authResponse = authService.login(code, state, flowId);
         adicionarSessionCookie(response, authResponse.sessionId());
-
-        return ResponseEntity.ok(authResponse);
+        limparFlowCookie(response);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(frontendUrl + "/auth/callback"))
+                .build();
     }
 
     @PostMapping("/logout")
@@ -84,6 +98,28 @@ public class AuthController {
             limparSessionCookie(response);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+    }
+
+    private void adicionarFlowCookie(HttpServletResponse response, String flowId) {
+        ResponseCookie cookie = ResponseCookie.from("OAUTH_FLOW", flowId)
+                .httpOnly(true)
+                .secure(secureCookies)
+                .path("/auth/callback")
+                .maxAge(Duration.ofMinutes(5))
+                .sameSite("Lax")
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    private void limparFlowCookie(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from("OAUTH_FLOW", "")
+                .httpOnly(true)
+                .secure(secureCookies)
+                .path("/auth/callback")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
     private void adicionarSessionCookie(HttpServletResponse response, String sessionId) {
