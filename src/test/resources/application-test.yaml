@@ -39,6 +39,9 @@ spring:
           issuer-uri: http://localhost:8180/realms/financeflow
 
 app:
+  bff:
+    redis-pubsub:
+      enabled: false
   keycloak:
     issuer-uri: http://localhost:8180/realms/financeflow
   frontend-url: http://localhost:4200
