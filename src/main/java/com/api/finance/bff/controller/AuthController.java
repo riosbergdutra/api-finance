@@ -1,10 +1,11 @@
 package com.api.finance.bff.controller;
 
-import com.api.finance.bff.dto.AuthResponseDTO; // IMPORT CORRETO
+import com.api.finance.bff.dto.AuthResponseDTO;
 import com.api.finance.bff.service.AuthService;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -12,10 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.beans.factory.annotation.Value;
 
-import java.time.Duration;
 import java.net.URI;
+import java.time.Duration;
 import java.util.UUID;
 
 @RestController
@@ -28,7 +28,7 @@ public class AuthController {
     @Value("${app.cookies.secure:true}")
     private boolean secureCookies;
 
-    @Value("${stripe.frontend-url}")
+    @Value("${app.frontend-url}")
     private String frontendUrl;
 
     @GetMapping("/login")
@@ -60,13 +60,11 @@ public class AuthController {
     public ResponseEntity<Void> logout(
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-
         if (sessionId != null) {
             authService.logout(sessionId);
         }
-
         limparSessionCookie(response);
-        return ResponseEntity.noContent().build(); // 204
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/me")
@@ -74,11 +72,8 @@ public class AuthController {
             @AuthenticationPrincipal Jwt jwt,
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-
-        // O Service agora resolve tudo. O Controller só diz "VAI".
         authService.processarExclusaoConta(jwt, sessionId, response);
         limparSessionCookie(response);
-
         return ResponseEntity.noContent().build();
     }
 
@@ -86,15 +81,14 @@ public class AuthController {
     public ResponseEntity<AuthResponseDTO> refresh(
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-
-        if (sessionId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-
+        if (sessionId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         try {
             AuthResponseDTO authResponse = authService.refresh(sessionId);
             adicionarSessionCookie(response, authResponse.sessionId());
             return ResponseEntity.ok(authResponse);
         } catch (RuntimeException e) {
-            // Se o Refresh Token no Keycloak expirou, limpa o cookie do usuário
             limparSessionCookie(response);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
@@ -116,7 +110,7 @@ public class AuthController {
                 .httpOnly(true)
                 .secure(secureCookies)
                 .path("/auth/callback")
-                .maxAge(0)
+                .maxAge(Duration.ZERO)
                 .sameSite("Lax")
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
@@ -135,8 +129,11 @@ public class AuthController {
 
     private void limparSessionCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("SESSION_ID", "")
-                .maxAge(0)
+                .httpOnly(true)
+                .secure(secureCookies)
                 .path("/")
+                .maxAge(Duration.ZERO)
+                .sameSite("Lax")
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
