@@ -1,6 +1,8 @@
 package com.api.finance.security;
 
 import com.api.finance.bff.service.AuthService;
+import com.api.finance.bff.exceptions.AuthIntegrationException;
+import com.api.finance.bff.exceptions.SessionNotFoundException;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,12 +76,28 @@ class BffSessionAuthenticationFilterTest {
             throw new AssertionError("A cadeia não deveria continuar para uma sessão inválida.");
         };
         when(authService.autenticarSessao("invalid-session"))
-                .thenThrow(new IllegalStateException("invalid"));
+                .thenThrow(new SessionNotFoundException("invalid"));
 
         filter.doFilter(request, response, chain);
 
         assertEquals(401, response.getStatus());
         assertFalse(SecurityContextHolder.getContext().getAuthentication() != null);
+    }
+
+    @Test
+    void deveResponder503QuandoOProvedorDeAutenticacaoEstiverIndisponivel() throws ServletException, IOException {
+        MockHttpServletRequest request = request("/api/users/me");
+        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "opaque-session-id"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = (req, res) -> {
+            throw new AssertionError("A cadeia não deveria continuar durante indisponibilidade de autenticação.");
+        };
+        when(authService.autenticarSessao("opaque-session-id"))
+                .thenThrow(new AuthIntegrationException("provider unavailable"));
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals(503, response.getStatus());
     }
 
     @Test
