@@ -1,4 +1,9 @@
 spring:
+  springdoc:
+    api-docs:
+      enabled: false
+    swagger-ui:
+      enabled: false
   datasource:
     url: ${DATABASE_URL}
     username: ${DATABASE_USERNAME}
