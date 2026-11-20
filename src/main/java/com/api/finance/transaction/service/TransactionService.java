@@ -12,6 +12,7 @@ import com.api.finance.events.FinanceEvents;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.transaction.dto.CreateTransactionRequest;
+import com.api.finance.transaction.domain.TransactionFingerprint;
 import com.api.finance.transaction.dto.TransactionResponse;
 import com.api.finance.transaction.dto.UpdateTransactionRequest;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
@@ -30,10 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDate;
-import java.util.HexFormat;
 import java.util.UUID;
 
 @Service
@@ -82,37 +80,51 @@ public class TransactionService {
         Account account = accountRepository.findByIdAndUserId(req.accountId(), userId)
                 .orElseThrow(() -> new AccountNotFoundException("Conta não encontrada: " + req.accountId()));
 
-        // Deduplicação
-        String hash = gerarHash(userId, req.accountId(), req.valor(), req.data(), req.descricao());
-        if (transactionRepository.existsByHashDeduplicacao(hash)) {
-            throw new IllegalStateException("Transação duplicada detectada.");
-        }
+        // Impressão digital de domínio: SHA-256 determinístico e sem fallback aleatório.
+        String fingerprint = TransactionFingerprint.of(
+                userId, req.accountId(), req.valor(), req.data(), req.descricao()
+        ).value();
 
         Category category = resolveCategoria(req.categoryId(), req.estabelecimento(), userId);
         TransactionStatus status = req.status() != null ? req.status() : TransactionStatus.CONFIRMADA;
+        UUID transactionId = UUID.randomUUID();
 
-        Transaction trx = Transaction.builder()
-                .userId(userId)
-                .accountId(account.getId())
-                .contaDestinoId(req.tipo() == TransactionType.TRANSFERENCIA ? req.contaDestinoId() : null)
-                .category(category)
-                .tipo(req.tipo())
-                .status(status)
-                .valor(req.valor())
-                .descricao(req.descricao())
-                .estabelecimento(req.estabelecimento())
-                .data(req.data())
-                .hashDeduplicacao(hash)
-                .build();
+        // O INSERT ... ON CONFLICT é a garantia atômica no PostgreSQL.
+        // A consulta prévia fornece uma mensagem amigável no caminho comum;
+        // o índice UNIQUE continua protegendo a corrida entre requisições.
+        if (transactionRepository.existsByHashDeduplicacao(fingerprint)) {
+            throw new IllegalStateException("Transação duplicada detectada.");
+        }
 
-        // Ajusta saldo se confirmada e verifica saldo negativo
+        int inserted = transactionRepository.insertIfFingerprintAbsent(
+                transactionId,
+                userId,
+                account.getId(),
+                req.tipo() == TransactionType.TRANSFERENCIA ? req.contaDestinoId() : null,
+                category != null ? category.getId() : null,
+                req.tipo().name(),
+                status.name(),
+                req.valor(),
+                req.descricao(),
+                req.estabelecimento(),
+                req.data(),
+                fingerprint
+        );
+
+        if (inserted == 0) {
+            throw new IllegalStateException("Transação duplicada detectada.");
+        }
+
+        // Efeitos financeiros só acontecem depois de confirmar que o INSERT venceu.
+        // Tudo permanece na mesma transação SQL: falha no saldo reverte também o INSERT.
         if (status == TransactionStatus.CONFIRMADA) {
             ajustarSaldo(account, req.tipo(), req.valor());
             accountRepository.save(account);
         }
 
-        Transaction saved = transactionRepository.save(trx);
-        log.info("Transação criada: id={} user={} tipo={} valor={}", saved.getId(), userId, req.tipo(), req.valor());
+        Transaction saved = transactionRepository.findByIdAndUserId(transactionId, userId)
+                .orElseThrow(() -> new IllegalStateException("Transação inserida, mas não foi possível recuperá-la."));
+        log.info("Transação criada: id={} user={} tipo={}", saved.getId(), userId, req.tipo());
 
         // FIX: eventos publicados APÓS salvar — listener executa só após commit
         String keycloakId = user.getKeycloakId().toString();
@@ -256,17 +268,6 @@ public class TransactionService {
             return categoryRepository.findByIdForUser(categoryId, userId).orElse(null);
         }
         return categoryService.categorizar(estabelecimento, userId).orElse(null);
-    }
-
-    private String gerarHash(UUID userId, UUID accountId, BigDecimal valor, LocalDate data, String descricao) {
-        try {
-            String raw = userId + "|" + accountId + "|" + valor + "|" + data + "|" + (descricao != null ? descricao : "");
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(bytes);
-        } catch (Exception e) {
-            return UUID.randomUUID().toString();
-        }
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
