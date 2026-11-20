@@ -11,6 +11,7 @@ The production profile uses Hibernate `validate`; it will not create, update, or
 ## Required production environment
 
 - `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`
+- `REDIS_HOST`, `REDIS_PASSWORD` (production Redis uses TLS; `REDIS_PORT` defaults to `6379`; `REDIS_USERNAME` defaults to `default`)
 - `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_ISSUER_URI`
 - `CORS_ALLOWED_ORIGINS` (comma-separated exact origins; never use `*` with credentials)
 - `FRONTEND_URL`
