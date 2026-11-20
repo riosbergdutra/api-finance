@@ -12,7 +12,6 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.List;
@@ -21,15 +20,15 @@ import java.util.List;
  * Handler de WebSocket para notificações em tempo real.
  *
  * FLUXO:
- * 1. Angular abre conexão: ws://backend/ws/notifications?token=<access_token>
- * 2. Handler valida o JWT do query param antes de aceitar
+ * 1. Browser opens /ws/notifications with its HttpOnly SESSION_ID cookie
+ * 2. Handler resolves and validates the server-side BFF session before accepting
  * 3. Sessão WebSocket fica associada ao userId
  * 4. Quando NotificationService cria uma notificação, chama sendToUser()
  * 5. A mensagem é enviada via WebSocket — sem polling, sem reload
  *
  * SEGURANÇA:
- * - Token validado no afterConnectionEstablished (antes de aceitar qualquer mensagem)
- * - Sessão recusada se token inválido ou ausente
+ * - Session cookie validated on connection establishment
+ * - Session rejected if the cookie is missing, expired, or invalid
  * - userId extraído do "sub" do JWT (keycloakId), nunca do query param diretamente
  *
  * CONCORRÊNCIA:
