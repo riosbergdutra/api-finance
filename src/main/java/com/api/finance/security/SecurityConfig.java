@@ -12,20 +12,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
-/**
- * Configuração de segurança do FinanceFlow.
- *
- * MODELO BFF STATELESS:
- * - Nenhuma sessão HTTP criada (STATELESS)
- * - Bearer JWT validado em todo request de negócio
- * - Refresh token fica em Redis (AuthSession), nunca exposto
- * - CSRF desabilitado: API stateless com JWT não precisa (sem cookies de autenticação)
- *
- * FAIL-SAFE: anyRequest().denyAll() — qualquer rota não mapeada é bloqueada.
- * Nunca use permitAll() como regra final.
- */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -35,51 +25,33 @@ public class SecurityConfig {
     private String issuerUri;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            BffSessionAuthenticationFilter sessionAuthenticationFilter) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        // Monitoramento — só health e info expostos
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/info").permitAll()
-                        // Documentação da API
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // BFF auth — sem JWT (recebe authorization code do Keycloak)
-                        .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback", "/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
-                        // Logout do BFF é autenticado pelo cookie/JWT do próprio usuário
                         .requestMatchers(HttpMethod.DELETE, "/auth/me").authenticated()
-                        // WebSocket — autenticado via query param token (não Bearer header)
                         .requestMatchers("/ws/**").permitAll()
-                        // Módulos de negócio — JWT obrigatório
-                        // OBS: UserController expõe seus endpoints sob "/api/users/**" (prefixo "/api"
-                        // diferente dos demais controllers). Os dois matchers abaixo cobrem tanto o
-                        // path real do controller quanto o padrão "/users/**" usado pelos demais módulos.
-                        .requestMatchers("/api/users/**").authenticated()
-                        .requestMatchers("/users/**").authenticated()
-                        .requestMatchers("/accounts/**").authenticated()
-                        .requestMatchers("/transactions/**").authenticated()
-                        .requestMatchers("/categories/**").authenticated()
-                        .requestMatchers("/budgets/**").authenticated()
-                        .requestMatchers("/goals/**").authenticated()
-                        .requestMatchers("/notifications/**").authenticated()
-                        .requestMatchers("/dashboard/**").authenticated()
-                        .requestMatchers("/subscriptions/**").authenticated()
+                        .requestMatchers("/api/users/**", "/users/**", "/accounts/**", "/transactions/**",
+                                "/categories/**", "/budgets/**", "/goals/**", "/notifications/**",
+                                "/dashboard/**", "/subscriptions/**", "/export/**", "/open-finance/**")
+                        .authenticated()
                         .requestMatchers(HttpMethod.POST, "/webhooks/mercadopago", "/webhooks/stripe").permitAll()
-                        .requestMatchers("/export/**").authenticated()
-                        .requestMatchers("/open-finance/**").authenticated()
-                        // FAIL-SAFE: bloqueia qualquer rota não mapeada explicitamente
                         .anyRequest().denyAll()
                 )
-                // API stateless com JWT — CSRF não aplicável
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                )
                 .cors(Customizer.withDefaults())
                 .logout(logout -> logout.disable())
-                // Valida Bearer JWT em todo request de negócio
-                .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
-                // Sem sessão HTTP
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                // Security headers
+                .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
