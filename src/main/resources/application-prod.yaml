@@ -46,3 +46,4 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   cookies:
     secure: true
+    same-site: ${COOKIE_SAME_SITE:Lax}
