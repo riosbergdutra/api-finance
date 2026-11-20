@@ -50,7 +50,7 @@ public class AuthService {
     @Value("${spring.security.oauth2.client.registration.keycloak.client-secret}")
     private String clientSecret;
 
-    @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
+    @Value("${app.keycloak.issuer-uri:${spring.security.oauth2.client.provider.keycloak.issuer-uri:}}")
     private String issuerUri;
 
     @Value("${app.auth.redirect-uri:http://localhost:4200/auth/callback}")
