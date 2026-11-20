@@ -19,13 +19,6 @@ spring:
       port: 6379
   security:
     oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://localhost:8180/realms/financeflow
-
-spring:
-  security:
-    oauth2:
       client:
         registration:
           keycloak:
@@ -33,6 +26,9 @@ spring:
             client-secret: test-secret
       provider:
         keycloak:
+          issuer-uri: http://localhost:8180/realms/financeflow
+      resourceserver:
+        jwt:
           issuer-uri: http://localhost:8180/realms/financeflow
 
 stripe:
