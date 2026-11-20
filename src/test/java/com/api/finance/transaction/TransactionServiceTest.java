@@ -135,7 +135,9 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -155,7 +157,9 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -205,7 +209,9 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar("Padaria Estrela", USER_ID)).willReturn(Optional.of(cat));
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
