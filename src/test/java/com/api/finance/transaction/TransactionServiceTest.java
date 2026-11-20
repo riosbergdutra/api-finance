@@ -16,6 +16,10 @@ import com.api.finance.transaction.model.TransactionStatus;
 import com.api.finance.transaction.model.TransactionType;
 import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.transaction.service.TransactionService;
+import com.api.finance.subscription.service.SubscriptionService;
+import com.api.finance.budget.service.BudgetService;
+import com.api.finance.user.model.User;
+import org.springframework.context.ApplicationEventPublisher;
 import com.api.finance.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +53,9 @@ class TransactionServiceTest {
     @Mock CategoryRepository categoryRepository;
     @Mock CategoryService categoryService;
     @Mock UserRepository userRepository;
+    @Mock SubscriptionService subscriptionService;
+    @Mock BudgetService budgetService;
+    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks TransactionService transactionService;
 
     AuthenticatedUser caller;
@@ -98,6 +105,7 @@ class TransactionServiceTest {
         @Test
         @DisplayName("cria transação DESPESA e debita saldo da conta")
         void criaDespesaEDebitaSaldo() {
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(100), "Mercado", "Supermercado X", LocalDate.now());
@@ -208,6 +216,7 @@ class TransactionServiceTest {
         @DisplayName("reverte saldo antigo e aplica novo quando ambas confirmadas")
         void reverteEAplicaNovaSaldo() {
             // Transação original: DESPESA 100 CONFIRMADA → conta 1000
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             UpdateTransactionRequest req = new UpdateTransactionRequest(
                     null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());
