@@ -48,6 +48,10 @@ class NotificationServiceTest {
     void setUp() {
         caller = caller();
         notification = notification();
+
+    }
+
+    private void stubUser() {
         given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
@@ -56,6 +60,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("listar: retorna page de notificações")
     void listarRetornaPage() {
+            stubUser();
         Page<Notification> page = new PageImpl<>(List.of(notification));
         given(notificationRepository.findByUserIdOrderByLidaAscCriadoEmDesc(eq(USER_ID), any(Pageable.class)))
                 .willReturn(page);
@@ -71,6 +76,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("listarNaoLidas: retorna somente não lidas")
     void listarNaoLidas() {
+            stubUser();
         given(notificationRepository.findByUserIdAndLidaFalseOrderByCriadoEmDesc(USER_ID))
                 .willReturn(List.of(notification));
 
@@ -85,6 +91,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("contarNaoLidas: retorna contagem correta")
     void contarNaoLidas() {
+            stubUser();
         given(notificationRepository.countByUserIdAndLidaFalse(USER_ID)).willReturn(5L);
 
         long total = notificationService.contarNaoLidas(caller);
@@ -100,6 +107,7 @@ class NotificationServiceTest {
         @Test
         @DisplayName("marca notificação como lida com sucesso")
         void marcaComoLida() {
+            stubUser();
             given(notificationRepository.findByIdAndUserId(NOTIFICATION_ID, USER_ID))
                     .willReturn(Optional.of(notification));
             given(notificationRepository.save(any())).willReturn(notification);
@@ -113,6 +121,7 @@ class NotificationServiceTest {
         @Test
         @DisplayName("lança ResourceNotFoundException quando notificação não encontrada")
         void lancaNotFound() {
+            stubUser();
             given(notificationRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> notificationService.marcarComoLida(UUID.randomUUID(), caller))
@@ -125,6 +134,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("marcarTodasComoLidas: retorna quantidade marcada")
     void marcarTodasComoLidas() {
+            stubUser();
         given(notificationRepository.marcarTodasComoLidas(USER_ID)).willReturn(3);
 
         int total = notificationService.marcarTodasComoLidas(caller);
