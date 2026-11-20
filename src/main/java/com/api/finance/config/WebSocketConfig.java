@@ -14,8 +14,8 @@ import java.util.Arrays;
 /**
  * Configura o endpoint WebSocket para notificações em tempo real.
  *
- * O Angular conecta em: ws://localhost:8080/ws/notifications?token=<access_token>
- * O handler valida o token JWT antes de aceitar a conexão.
+ * O Angular conecta em /ws/notifications; o navegador envia o cookie HttpOnly.
+ * O handler valida a sessão BFF antes de aceitar a conexão.
  *
  * Por que WebSocket puro (não STOMP/SockJS)?
  * - Mais simples para o caso de uso de notificações unidirecionais (server → client)
