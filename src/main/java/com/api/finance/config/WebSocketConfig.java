@@ -7,6 +7,9 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 
 import com.api.finance.notification.websocket.NotificationWebSocketHandler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+
+import java.util.Arrays;
 
 /**
  * Configura o endpoint WebSocket para notificações em tempo real.
@@ -26,11 +29,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final NotificationWebSocketHandler notificationHandler;
 
+    @Value("${app.cors.allowed-origins:http://localhost:4200}")
+    private String allowedOrigins;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry
             .addHandler(notificationHandler, "/ws/notifications")
-            // Permite conexão do Angular em dev (localhost:4200) e prod (domínio configurado)
-            .setAllowedOriginPatterns("http://localhost:4200", "https://*.seudominio.com.br");
+            .setAllowedOriginPatterns(Arrays.stream(allowedOrigins.split(","))
+                    .map(String::trim)
+                    .filter(origin -> !origin.isBlank())
+                    .toArray(String[]::new));
     }
 }
