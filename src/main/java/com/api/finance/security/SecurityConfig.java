@@ -44,7 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // BFF auth — sem JWT (recebe authorization code do Keycloak)
                         .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout", "/auth/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
                         // Logout do BFF é autenticado pelo cookie/JWT do próprio usuário
                         .requestMatchers(HttpMethod.DELETE, "/auth/me").authenticated()
                         // WebSocket — autenticado via query param token (não Bearer header)
