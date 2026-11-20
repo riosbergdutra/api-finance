@@ -152,7 +152,7 @@ class NotificationServiceTest {
         @DisplayName("salva notificação sem entidade relacionada")
         void criaSemEntidade() {
             notificationService.criarNotificacao(
-                    USER_ID, NotificationType.META_CONCLUIDA, "Meta!", "Parabéns");
+                    KEYCLOAK_ID.toString(), USER_ID, NotificationType.META_CONCLUIDA, "Meta!", "Parabéns");
 
             then(notificationRepository).should().save(argThat(n ->
                     n.getEntidadeTipo() == null && n.getEntidadeId() == null
