@@ -58,10 +58,11 @@ public class AuthService {
     @Value("${app.auth.redirect-uri:http://localhost:8080/auth/callback}")
     private String redirectUri;
 
-   @Retry(name = "keycloak")
-    public AuthResponseDTO login(String code) {
-        //  Busca tokens no Keycloak
-        KeycloakTokenResponse response = buscarTokensNoKeycloak("authorization_code", "code", code);
+    @Retry(name = "keycloak")
+    public AuthResponseDTO login(String code, String state, String flowId) {
+        String codeVerifier = loginAttemptStore.consumeVerifier(flowId, state);
+        KeycloakTokenResponse response = buscarTokensNoKeycloak(
+                "authorization_code", "code", code, codeVerifier);
 
         // Extrai dados do Token (O jwtDecoder já deve estar validando a assinatura)
         Jwt jwt = jwtDecoder.decode(response.accessToken());
