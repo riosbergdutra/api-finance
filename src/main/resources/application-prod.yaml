@@ -39,6 +39,7 @@ stripe:
   mode: test
 
 app:
+  frontend-url: ${FRONTEND_URL}
   auth:
     redirect-uri: ${AUTH_REDIRECT_URI}
   cors:
