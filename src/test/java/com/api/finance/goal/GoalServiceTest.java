@@ -217,7 +217,6 @@ class GoalServiceTest {
     void concluirManualmente() {
             given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-        given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
         given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
         given(goalRepository.save(any())).willReturn(goal);
 
