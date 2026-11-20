@@ -24,9 +24,10 @@ spring:
           keycloak:
             client-id: financeflow-test
             client-secret: test-secret
-      provider:
-        keycloak:
-          issuer-uri: http://localhost:8180/realms/financeflow
+      client:
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8180/realms/financeflow
       resourceserver:
         jwt:
           issuer-uri: http://localhost:8180/realms/financeflow
