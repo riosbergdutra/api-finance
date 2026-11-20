@@ -7,6 +7,7 @@ import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.notification.application.port.out.UserIdentityPort;
 import com.api.finance.notification.application.port.out.NotificationPushPort;
+import com.api.finance.notification.application.port.out.NotificationPushMessage;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -124,7 +125,10 @@ public class NotificationService {
         log.debug("[Notification] Persistida: tipo={} userId={}", tipo, userId);
 
         // Entrega em tempo real é uma porta de saída e não controla a persistência.
-        notificationPushPort.publish(keycloakId, NotificationResponse.de(notif));
+        notificationPushPort.publish(keycloakId, new NotificationPushMessage(
+                notif.getId(), notif.getTipo(), notif.getTitulo(), notif.getMensagem(),
+                notif.isLida(), notif.getEntidadeTipo(), notif.getEntidadeId(), notif.getCriadoEm()
+        ));
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
