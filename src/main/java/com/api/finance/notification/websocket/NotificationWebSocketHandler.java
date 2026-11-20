@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.jwt.Jwt;
 import com.api.finance.bff.service.AuthService;
+import com.api.finance.bff.event.BffSessionRevokedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -69,12 +71,40 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
             // Guarda o keycloakId na sessão para uso no fechamento
             session.getAttributes().put("keycloakId", keycloakId);
+            session.getAttributes().put("bffSessionId", sessionId);
 
             log.info("[WS] Conexão estabelecida: keycloakId={} sessionId={}", keycloakId, session.getId());
 
         } catch (RuntimeException e) {
-            recusarConexao(session, "Token inválido: " + e.getMessage());
+            recusarConexao(session, "Sessão inválida ou expirada");
         }
+    }
+
+    /**
+     * Closes every WebSocket opened with a BFF session after that session is
+     * revoked. This prevents another tab/device from continuing to receive
+     * private notifications after logout or account deletion.
+     */
+    @EventListener
+    public void onBffSessionRevoked(BffSessionRevokedEvent event) {
+        sessoesPorUsuario.forEach((keycloakId, sessions) -> {
+            sessions.removeIf(webSocket -> {
+                if (!event.sessionId().equals(webSocket.getAttributes().get("bffSessionId"))) {
+                    return false;
+                }
+                try {
+                    if (webSocket.isOpen()) {
+                        webSocket.close(CloseStatus.POLICY_VIOLATION);
+                    }
+                } catch (IOException e) {
+                    log.warn("[WS] Não foi possível fechar conexão após revogação de sessão: {}", webSocket.getId());
+                }
+                return true;
+            });
+            if (sessions.isEmpty()) {
+                sessoesPorUsuario.remove(keycloakId, sessions);
+            }
+        });
     }
 
     @Override
