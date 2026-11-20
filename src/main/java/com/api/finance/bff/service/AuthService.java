@@ -58,7 +58,6 @@ public class AuthService {
     @Value("${app.auth.redirect-uri:http://localhost:8080/auth/callback}")
     private String redirectUri;
 
-    @Retry(name = "keycloak")
     public AuthResponseDTO login(String code, String state, String flowId) {
         String codeVerifier = loginAttemptStore.consumeVerifier(flowId, state);
         KeycloakTokenResponse response = buscarTokensNoKeycloak(
