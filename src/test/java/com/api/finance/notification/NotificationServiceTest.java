@@ -6,6 +6,8 @@ import com.api.finance.notification.model.Notification;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.notification.service.NotificationService;
+import com.api.finance.notification.websocket.NotificationWebSocketHandler;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +37,8 @@ class NotificationServiceTest {
 
     @Mock NotificationRepository notificationRepository;
     @Mock UserRepository userRepository;
+    @Mock NotificationWebSocketHandler webSocketHandler;
+    @Mock ObjectMapper objectMapper;
     @InjectMocks NotificationService notificationService;
 
     AuthenticatedUser caller;
