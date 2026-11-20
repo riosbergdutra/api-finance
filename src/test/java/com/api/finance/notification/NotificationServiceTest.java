@@ -2,14 +2,13 @@ package com.api.finance.notification;
 
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.notification.dto.NotificationResponse;
+import com.api.finance.notification.application.port.out.UserIdentityPort;
+import com.api.finance.notification.application.port.out.NotificationPushPort;
 import com.api.finance.notification.model.Notification;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.notification.service.NotificationService;
-import com.api.finance.notification.websocket.NotificationWebSocketHandler;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.api.finance.shared.exception.ResourceNotFoundException;
-import com.api.finance.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,9 +35,8 @@ import static org.mockito.BDDMockito.*;
 class NotificationServiceTest {
 
     @Mock NotificationRepository notificationRepository;
-    @Mock UserRepository userRepository;
-    @Mock NotificationWebSocketHandler webSocketHandler;
-    @Mock ObjectMapper objectMapper;
+    @Mock UserIdentityPort userIdentityPort;
+    @Mock NotificationPushPort notificationPushPort;
     @InjectMocks NotificationService notificationService;
 
     AuthenticatedUser caller;
@@ -52,7 +50,7 @@ class NotificationServiceTest {
     }
 
     private void stubUser() {
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userIdentityPort.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listar ──────────────────────────────────────────────────────
@@ -160,6 +158,7 @@ class NotificationServiceTest {
                     && "BUDGET".equals(n.getEntidadeTipo())
                     && BUDGET_ID.equals(n.getEntidadeId())
             ));
+            then(notificationPushPort).should().publish(eq(KEYCLOAK_ID.toString()), any());
         }
 
         @Test
@@ -171,6 +170,7 @@ class NotificationServiceTest {
             then(notificationRepository).should().save(argThat(n ->
                     n.getEntidadeTipo() == null && n.getEntidadeId() == null
             ));
+            then(notificationPushPort).should().publish(eq(KEYCLOAK_ID.toString()), any());
         }
     }
 }
