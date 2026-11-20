@@ -4,7 +4,7 @@ package com.api.finance.bff.service;
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.model.AuthSession;
-import  com.api.finance.bff.dto.AuthResponseDTO;
+import com.api.finance.bff.dto.AuthResponseDTO;
 import com.api.finance.bff.repository.AuthSessionRepository;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
@@ -64,41 +64,32 @@ public class AuthService {
         KeycloakTokenResponse response = buscarTokensNoKeycloak(
                 "authorization_code", "code", code, codeVerifier);
 
-        // Extrai dados do Token (O jwtDecoder já deve estar validando a assinatura)
         Jwt jwt = jwtDecoder.decode(response.accessToken());
         String keycloakId = jwt.getSubject();
         String email = jwt.getClaimAsString("email");
         String nome = jwt.getClaimAsString("name");
 
         if (nome == null || nome.isBlank()) {
-            // Tenta o username
             nome = jwt.getClaimAsString("preferred_username");
         }
 
         if (nome == null || nome.isBlank()) {
-            // Se nem o username existir, usa a primeira parte do email
             nome = email != null ? email.split("@")[0] : "Usuário";
         }
 
-        // 3. Persiste o usuário (Lógica "Get or Create" segura para concorrência)
         garantirExistenciaUsuario(keycloakId, email, nome);
-
-        // 4. Cria sessão no Redis
         String sessionId = criarSessaoNoRedis(response.accessToken(), response.refreshToken(), keycloakId);
 
         return new AuthResponseDTO(sessionId);
     }
 
-
     private void garantirExistenciaUsuario(String keycloakId, String email, String nome) {
         UUID uuid = UUID.fromString(keycloakId);
 
-        // 1. Otimização: Evita o INSERT se o usuário já é recorrente
         if (userRepository.existsByKeycloakId(uuid)) {
             return;
         }
 
-        // 2. Tentativa de criação: Protegida contra condições de corrida
         try {
             User novo = new User();
             novo.setKeycloakId(uuid);
@@ -106,7 +97,6 @@ public class AuthService {
             novo.setNome(nome);
             userRepository.save(novo);
         } catch (DataIntegrityViolationException e) {
-            // Se outra thread inseriu entre o 'if' e o 'save', o banco bloqueia
             log.info("Usuário {} criado simultaneamente por outra instância.", keycloakId);
         }
     }
@@ -114,7 +104,6 @@ public class AuthService {
     @CircuitBreaker(name = "keycloak", fallbackMethod = "refreshFallback")
     @Retry(name = "keycloak")
     public AuthResponseDTO refresh(String sessionId) {
-        // Trocamos RuntimeException por SessionNotFoundException
         AuthSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
 
@@ -131,7 +120,6 @@ public class AuthService {
 
             return new AuthResponseDTO(sessionId);
         } catch (Exception e) {
-            // Se o Keycloak rejeitar o Refresh Token, algo deu errado na integração
             throw new AuthIntegrationException("Não foi possível atualizar o token no Keycloak.");
         }
     }
@@ -153,28 +141,31 @@ public class AuthService {
         }
     }
 
-    @CircuitBreaker(name = "keycloak")
+    /**
+     * Logout must always remove the local BFF session, even when Keycloak is
+     * unavailable or the Resilience4j circuit breaker is open. Remote token
+     * revocation is best-effort; deleting the local session is mandatory.
+     */
     public void logout(String sessionId) {
         sessionRepository.findById(sessionId).ifPresent(session -> {
             try {
                 revogarNoKeycloak(session.getRefreshToken());
             } catch (Exception e) {
-                log.warn("Falha ao revogar token no Keycloak para sessão {}", sessionId);
+                // Never log the opaque session id or any OAuth credential.
+                log.warn("Falha ao revogar token no Keycloak durante logout; sessão local será invalidada.");
+            } finally {
+                sessionRepository.delete(session);
             }
-            sessionRepository.delete(session);
         });
     }
 
     @Transactional
     public void processarExclusaoConta(Jwt jwt, String sessionId, HttpServletResponse response) {
-        // 1. Usa o provider internamente para não poluir o Controller
         AuthenticatedUser user = userprovider.get(jwt);
         UUID keycloakId = user.id();
 
-        // 2. Lógica de banco
         userRepository.deleteByKeycloakId(keycloakId);
 
-        // 3. Lógica de Sessão/Redis
         if (sessionId != null) {
             this.logout(sessionId);
         }
@@ -255,9 +246,6 @@ public class AuthService {
             @JsonProperty("refresh_token") String refreshToken
     ) {}
 
-    // ── Fallbacks Resilience4j ──────────────────────────────────────────
-    // Chamados quando o Circuit Breaker está aberto (Keycloak indisponível)
-
     @SuppressWarnings("unused")
     private AuthResponseDTO loginFallback(String code, Throwable t) {
         log.error("Circuit Breaker OPEN: Keycloak indisponível para login. {}", t.getMessage());
@@ -268,13 +256,5 @@ public class AuthService {
     private AuthResponseDTO refreshFallback(String sessionId, Throwable t) {
         log.error("Circuit Breaker OPEN: Keycloak indisponível para refresh. {}", t.getMessage());
         throw new AuthIntegrationException("O serviço de autenticação está temporariamente indisponível.");
-    }
-
-    private void limparSessionCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie.from("SESSION_ID", "")
-                .maxAge(0)
-                .path("/")
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 }
