@@ -15,7 +15,6 @@ import com.api.finance.user.repository.UserRepository;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +22,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
@@ -36,6 +37,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.UUID;
+import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +47,7 @@ public class AuthService {
 
     private final RestClient restClient;
     private final AuthSessionRepository sessionRepository;
+    private final StringRedisTemplate redis;
     private final OAuthLoginAttemptStore loginAttemptStore;
     private final UserRepository userRepository;
     private final JwtDecoder jwtDecoder;
@@ -105,25 +109,56 @@ public class AuthService {
     }
 
     @CircuitBreaker(name = "keycloak", fallbackMethod = "refreshFallback")
-    @Retry(name = "keycloak")
     public AuthResponseDTO refresh(String sessionId) {
-        AuthSession session = sessionRepository.findById(sessionId)
+        AuthSession observed = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
+        String lockKey = "auth:refresh-lock:" + sessionId;
+        String lockValue = UUID.randomUUID().toString();
+        DefaultRedisScript<Long> releaseScript = new DefaultRedisScript<>(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                Long.class);
 
+        boolean acquired = false;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(12);
         try {
+            while (!(acquired = Boolean.TRUE.equals(
+                    redis.opsForValue().setIfAbsent(lockKey, lockValue, java.time.Duration.ofSeconds(30))))) {
+                if (System.nanoTime() >= deadline) {
+                    throw new AuthIntegrationException("Renovação de sessão ocupada; tente novamente.");
+                }
+                Thread.sleep(100);
+            }
+
+            // Re-read only after acquiring the distributed lock. Another node may
+            // already have rotated the refresh token while this request was waiting.
+            AuthSession current = sessionRepository.findById(sessionId)
+                    .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
+            if (!Objects.equals(observed.getRefreshToken(), current.getRefreshToken())) {
+                return new AuthResponseDTO(sessionId);
+            }
+
             KeycloakTokenResponse response = buscarTokensNoKeycloak(
-                    "refresh_token",
-                    "refresh_token",
-                    session.getRefreshToken()
-            );
-
-            session.setAccessToken(response.accessToken());
-            session.setRefreshToken(response.refreshToken());
-            sessionRepository.save(session);
-
+                    "refresh_token", "refresh_token", current.getRefreshToken());
+            current.setAccessToken(response.accessToken());
+            current.setRefreshToken(response.refreshToken());
+            sessionRepository.save(current);
             return new AuthResponseDTO(sessionId);
-        } catch (Exception e) {
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AuthIntegrationException("Renovação de sessão interrompida.");
+        } catch (SessionNotFoundException | AuthIntegrationException known) {
+            throw known;
+        } catch (Exception failure) {
             throw new AuthIntegrationException("Não foi possível atualizar o token no Keycloak.");
+        } finally {
+            if (acquired) {
+                try {
+                    redis.execute(releaseScript, List.of(lockKey), lockValue);
+                } catch (RuntimeException releaseFailure) {
+                    // The lock has a short TTL; never expose its value or session identifier.
+                    log.warn("Não foi possível liberar imediatamente o lock de renovação; ele expirará automaticamente.");
+                }
+            }
         }
     }
 
