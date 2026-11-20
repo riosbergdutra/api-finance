@@ -58,6 +58,7 @@ class CategoryServiceTest {
     @Test
     @DisplayName("listar: retorna categorias do usuário e de sistema")
     void listarRetornaCategorias() {
+            stubUser();
         given(categoryRepository.findAllForUser(USER_ID)).willReturn(List.of(category));
 
         List<CategoryResponse> result = categoryService.listar(caller);
@@ -74,6 +75,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("cria categoria com sucesso")
         void criaComSucesso() {
+            stubUser();
             CreateCategoryRequest req = new CreateCategoryRequest(
                     "Transporte", CategoryType.DESPESA, null, null, null);
 
@@ -93,6 +95,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("lança IllegalArgumentException quando nome duplicado")
         void lancaExcecaoNomeDuplicado() {
+            stubUser();
             CreateCategoryRequest req = new CreateCategoryRequest(
                     "Alimentação", CategoryType.DESPESA, null, null, null);
 
@@ -106,6 +109,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("resolve categoria pai quando paiId informado")
         void resolveCategoriaPai() {
+            stubUser();
             UUID paiId = UUID.randomUUID();
             CreateCategoryRequest req = new CreateCategoryRequest(
                     "Sub", CategoryType.DESPESA, null, null, paiId);
@@ -124,6 +128,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("lança CategoryNotFoundException quando paiId não encontrado")
         void lancaNotFoundQuandoPaiInexistente() {
+            stubUser();
             UUID paiId = UUID.randomUUID();
             CreateCategoryRequest req = new CreateCategoryRequest(
                     "Sub", CategoryType.DESPESA, null, null, paiId);
@@ -144,6 +149,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("atualiza categoria com sucesso")
         void atualizaComSucesso() {
+            stubUser();
             CreateCategoryRequest req = new CreateCategoryRequest(
                     "Lazer", CategoryType.DESPESA, null, null, null);
 
@@ -159,6 +165,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("lança IllegalStateException quando tentativa de editar categoria de sistema")
         void lancaExcecaoCategoriaSistema() {
+            stubUser();
             category.setSistema(true);
             CreateCategoryRequest req = new CreateCategoryRequest(
                     "X", CategoryType.DESPESA, null, null, null);
@@ -179,6 +186,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("faz soft-delete com sucesso")
         void deletaComSucesso() {
+            stubUser();
             given(categoryRepository.findByIdForUser(CATEGORY_ID, USER_ID)).willReturn(Optional.of(category));
             given(categoryRepository.save(any())).willReturn(category);
 
@@ -189,6 +197,7 @@ class CategoryServiceTest {
         @Test
         @DisplayName("lança IllegalStateException quando tentativa de deletar categoria de sistema")
         void lancaExcecaoCategoriaSistema() {
+            stubUser();
             category.setSistema(true);
             given(categoryRepository.findByIdForUser(CATEGORY_ID, USER_ID)).willReturn(Optional.of(category));
 
@@ -276,6 +285,7 @@ class CategoryServiceTest {
     @Test
     @DisplayName("aprenderRegra: salva MerchantRule com sucesso")
     void aprenderRegraComSucesso() {
+            stubUser();
         given(categoryRepository.findByIdForUser(CATEGORY_ID, USER_ID)).willReturn(Optional.of(category));
 
         assertThatCode(() -> categoryService.aprenderRegra("padaria", CATEGORY_ID, caller))
