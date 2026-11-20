@@ -23,4 +23,23 @@ spring:
         jwt:
           issuer-uri: http://localhost:8180/realms/financeflow
 
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: financeflow-test
+            client-secret: test-secret
+      provider:
+        keycloak:
+          issuer-uri: http://localhost:8180/realms/financeflow
+
+stripe:
+  api-key: sk_test_ci_placeholder
+  price-id: price_ci_placeholder
+  frontend-url: http://localhost:4200
+  webhook-secret: whsec_ci_placeholder
+  mode: test
+
 spring.task.scheduling.enabled: false
