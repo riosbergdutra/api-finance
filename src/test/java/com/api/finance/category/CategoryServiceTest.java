@@ -46,6 +46,10 @@ class CategoryServiceTest {
     void setUp() {
         caller = caller();
         category = category();
+
+    }
+
+    private void stubUser() {
         given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
