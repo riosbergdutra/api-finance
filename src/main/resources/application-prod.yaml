@@ -39,6 +39,8 @@ stripe:
   mode: test
 
 app:
+  auth:
+    redirect-uri: ${AUTH_REDIRECT_URI}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   cookies:
