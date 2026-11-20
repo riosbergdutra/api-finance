@@ -87,9 +87,14 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
      */
     @EventListener
     public void onBffSessionRevoked(BffSessionRevokedEvent event) {
+        closeConnectionsForRevokedSession(event.sessionId());
+    }
+
+    /** Closes this replica's sockets; invoked for both local and Redis-broadcast revocations. */
+    public void closeConnectionsForRevokedSession(String revokedSessionId) {
         sessoesPorUsuario.forEach((keycloakId, sessions) -> {
             sessions.removeIf(webSocket -> {
-                if (!event.sessionId().equals(webSocket.getAttributes().get("bffSessionId"))) {
+                if (!revokedSessionId.equals(webSocket.getAttributes().get("bffSessionId"))) {
                     return false;
                 }
                 try {
