@@ -38,6 +38,10 @@ spring:
         jwt:
           issuer-uri: http://localhost:8180/realms/financeflow
 
+app:
+  keycloak:
+    issuer-uri: http://localhost:8180/realms/financeflow
+
 stripe:
   api-key: sk_test_ci_placeholder
   price-id: price_ci_placeholder
