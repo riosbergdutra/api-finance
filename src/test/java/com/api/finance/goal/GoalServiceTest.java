@@ -121,7 +121,6 @@ class GoalServiceTest {
         void adicionaValorSemConcluir() {
             given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             // valorAtual=1000, alvo=5000, deposito=500 → 1500 (ainda pendente)
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(500));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -138,7 +137,6 @@ class GoalServiceTest {
         void concluiAutomaticamenteAoAtingirAlvo() {
             given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             // valorAtual=1000, alvo=5000, deposito=4000 → 5000 = concluída
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(4000));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -154,7 +152,6 @@ class GoalServiceTest {
         void concluiQuandoUltrapassaAlvo() {
             given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(99999));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
             given(goalRepository.save(any())).willReturn(goal);
@@ -169,7 +166,6 @@ class GoalServiceTest {
         void lancaExcecaoMetaConcluida() {
             given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             goal.setConcluida(true);
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
