@@ -11,6 +11,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -51,7 +52,8 @@ public class BffSessionAuthenticationFilter extends OncePerRequestFilter {
         if (sessionId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
                 var jwt = authService.autenticarSessao(sessionId);
-                var authentication = new JwtAuthenticationToken(jwt);
+                var authorities = new JwtGrantedAuthoritiesConverter().convert(jwt);
+                var authentication = new JwtAuthenticationToken(jwt, authorities);
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
