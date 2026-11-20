@@ -11,6 +11,7 @@ import com.api.finance.transaction.dto.CreateTransactionRequest;
 import com.api.finance.transaction.dto.TransactionResponse;
 import com.api.finance.transaction.dto.UpdateTransactionRequest;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
+import com.api.finance.transaction.exception.DuplicateTransactionException;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.model.TransactionStatus;
 import com.api.finance.transaction.model.TransactionType;
@@ -168,7 +169,7 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("lança IllegalStateException quando transação duplicada")
+        @DisplayName("lança DuplicateTransactionException quando transação duplicada")
         void lancaExcecaoTransacaoDuplicada() {
             given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
@@ -179,7 +180,7 @@ class TransactionServiceTest {
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(true);
 
             assertThatThrownBy(() -> transactionService.criar(req, caller))
-                    .isInstanceOf(IllegalStateException.class)
+                    .isInstanceOf(DuplicateTransactionException.class)
                     .hasMessageContaining("duplicada");
         }
 
