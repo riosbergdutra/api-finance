@@ -1,6 +1,7 @@
 package com.api.finance.bff.service;
 
 
+import com.api.finance.bff.event.BffSessionRevokedEvent;
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.model.AuthSession;
@@ -20,6 +21,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -46,6 +48,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final JwtDecoder jwtDecoder;
     private final AuthenticatedUserProvider userprovider;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String clientId;
@@ -155,6 +158,7 @@ public class AuthService {
                 log.warn("Falha ao revogar token no Keycloak durante logout; sessão local será invalidada.");
             } finally {
                 sessionRepository.delete(session);
+                eventPublisher.publishEvent(new BffSessionRevokedEvent(sessionId));
             }
         });
     }
