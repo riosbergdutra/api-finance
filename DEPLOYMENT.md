@@ -14,7 +14,7 @@ The production profile uses Hibernate `validate`; it will not create, update, or
 - `REDIS_HOST`, `REDIS_PASSWORD` (production Redis uses TLS; `REDIS_PORT` defaults to `6379`; `REDIS_USERNAME` defaults to `default`)
 - `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_ISSUER_URI`
 - `CORS_ALLOWED_ORIGINS` (comma-separated exact origins; never use `*` with credentials)
-- `FRONTEND_URL`
+- `FRONTEND_URL`, `AUTH_REDIRECT_URI` (must exactly match the Keycloak client's registered callback URL)
 - `COOKIE_SECURE=true`
 - `STRIPE_API_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`
 
