@@ -1,6 +1,7 @@
 package com.api.finance.security;
 
 import com.api.finance.bff.service.AuthService;
+import com.api.finance.bff.exceptions.SessionNotFoundException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -58,9 +60,16 @@ public class BffSessionAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
                 SecurityContextHolder.setContext(context);
-            } catch (RuntimeException invalidSession) {
+            } catch (SessionNotFoundException | JwtException invalidSession) {
                 SecurityContextHolder.clearContext();
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Sessão inválida ou expirada.");
+                return;
+            } catch (RuntimeException authenticationUnavailable) {
+                // Redis/Keycloak outages are service failures, not proof that the
+                // browser session is invalid. Do not turn an outage into a logout.
+                SecurityContextHolder.clearContext();
+                response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "Serviço de autenticação temporariamente indisponível.");
                 return;
             }
         }
