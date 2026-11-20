@@ -19,8 +19,12 @@ BEGIN
         WHERE ns.nspname = current_schema()
           AND idx.relname = 'idx_trx_hash'
           AND (
-              NOT i.indisunique
+              i.indrelid <> 'transactions'::regclass
+              OR NOT i.indisunique
+              OR NOT i.indisvalid
               OR i.indnkeyatts <> 1
+              OR i.indnatts <> 1
+              OR i.indpred IS NOT NULL
               OR pg_get_indexdef(idx.oid) NOT ILIKE '%(hash_deduplicacao)'
           )
     ) THEN
