@@ -55,7 +55,7 @@ public class AuthService {
     @Value("${app.keycloak.issuer-uri:${spring.security.oauth2.client.provider.keycloak.issuer-uri:}}")
     private String issuerUri;
 
-    @Value("${app.auth.redirect-uri:http://localhost:4200/auth/callback}")
+    @Value("${app.auth.redirect-uri:http://localhost:8080/auth/callback}")
     private String redirectUri;
 
    @Retry(name = "keycloak")
