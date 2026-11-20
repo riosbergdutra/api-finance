@@ -16,6 +16,7 @@ import com.api.finance.transaction.domain.TransactionFingerprint;
 import com.api.finance.transaction.dto.TransactionResponse;
 import com.api.finance.transaction.dto.UpdateTransactionRequest;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
+import com.api.finance.transaction.exception.DuplicateTransactionException;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.model.TransactionStatus;
 import com.api.finance.transaction.model.TransactionType;
@@ -93,7 +94,7 @@ public class TransactionService {
         // A consulta prévia fornece uma mensagem amigável no caminho comum;
         // o índice UNIQUE continua protegendo a corrida entre requisições.
         if (transactionRepository.existsByHashDeduplicacao(fingerprint)) {
-            throw new IllegalStateException("Transação duplicada detectada.");
+            throw new DuplicateTransactionException();
         }
 
         int inserted = transactionRepository.insertIfFingerprintAbsent(
