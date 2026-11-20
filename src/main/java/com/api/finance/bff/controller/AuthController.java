@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/auth")
@@ -31,6 +32,11 @@ public class AuthController {
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @GetMapping("/session")
+    public ResponseEntity<Map<String, Boolean>> session() {
+        return ResponseEntity.ok(Map.of("authenticated", true));
+    }
 
     @GetMapping("/csrf")
     public CsrfToken csrf(CsrfToken csrfToken) {
