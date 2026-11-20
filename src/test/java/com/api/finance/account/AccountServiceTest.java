@@ -137,6 +137,8 @@ class AccountServiceTest {
                     "Extra", AccountType.CORRENTE, BigDecimal.ZERO, "BRL", null, null);
 
             given(accountRepository.countByUserIdAndActiveTrue(USER_ID)).willReturn(10L);
+            willThrow(new IllegalStateException("Limite de contas atingido"))
+                    .given(subscriptionService).assertPodeCriarConta(USER_ID, 10L);
 
             assertThatThrownBy(() -> accountService.create(req, caller))
                     .isInstanceOf(IllegalStateException.class)
