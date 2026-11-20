@@ -1,9 +1,4 @@
 spring:
-  springdoc:
-    api-docs:
-      enabled: false
-    swagger-ui:
-      enabled: false
   datasource:
     url: ${DATABASE_URL}
     username: ${DATABASE_USERNAME}
@@ -52,3 +47,10 @@ app:
   cookies:
     secure: true
     same-site: ${COOKIE_SAME_SITE:Lax}
+
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
