@@ -99,7 +99,7 @@ class BudgetServiceTest {
 
             given(budgetRepository.existsByUserIdAndCategoryIdAndMesAndAno(USER_ID, CATEGORY_ID, mes, ano)).willReturn(false);
             given(categoryRepository.findByIdForUser(CATEGORY_ID, USER_ID)).willReturn(Optional.of(cat));
-            given(transactionRepository.sumDespesaByCategoria(USER_ID, CATEGORY_ID, mes, ano))
+            given(transactionRepository.sumDespesaByCategoria(USER_ID, CATEGORY_ID, LocalDate.of(ano, mes, 1), LocalDate.of(ano, mes, 1).withDayOfMonth(LocalDate.of(ano, mes, 1).lengthOfMonth())))
                     .willReturn(BigDecimal.valueOf(150));
             given(budgetRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
