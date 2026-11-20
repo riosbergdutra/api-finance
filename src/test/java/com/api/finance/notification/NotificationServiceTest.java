@@ -137,12 +137,12 @@ class NotificationServiceTest {
         @DisplayName("salva notificação com entidade relacionada")
         void criaComEntidade() {
             notificationService.criarNotificacao(
-                    USER_ID, NotificationType.ORCAMENTO_ALERTA,
+                    KEYCLOAK_ID.toString(), USER_ID, NotificationType.ORCAMENTO_PROXIMO,
                     "Alerta", "Mensagem", "BUDGET", BUDGET_ID);
 
             then(notificationRepository).should().save(argThat(n ->
                     n.getUserId().equals(USER_ID)
-                    && n.getTipo() == NotificationType.ORCAMENTO_ALERTA
+                    && n.getTipo() == NotificationType.ORCAMENTO_PROXIMO
                     && "BUDGET".equals(n.getEntidadeTipo())
                     && BUDGET_ID.equals(n.getEntidadeId())
             ));
