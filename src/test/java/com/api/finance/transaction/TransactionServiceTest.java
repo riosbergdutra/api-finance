@@ -113,7 +113,8 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(), anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             TransactionResponse result = transactionService.criar(req, caller);
 
