@@ -24,9 +24,16 @@ spring:
           keycloak:
             client-id: financeflow-test
             client-secret: test-secret
+            authorization-grant-type: authorization_code
+            redirect-uri: http://localhost:4200/auth/callback
+            scope: openid,profile,email
         provider:
           keycloak:
-            issuer-uri: http://localhost:8180/realms/financeflow
+            authorization-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/auth
+            token-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/token
+            user-info-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/userinfo
+            jwk-set-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/certs
+            user-name-attribute: sub
       resourceserver:
         jwt:
           issuer-uri: http://localhost:8180/realms/financeflow
