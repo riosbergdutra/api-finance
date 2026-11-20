@@ -54,17 +54,17 @@ public class AuthService {
 
    @Retry(name = "keycloak")
     public AuthResponseDTO login(String code) {
-        // 1. Busca tokens no Keycloak
+        //  Busca tokens no Keycloak
         KeycloakTokenResponse response = buscarTokensNoKeycloak("authorization_code", "code", code);
 
-        // 2. Extrai dados do Token (O jwtDecoder já deve estar validando a assinatura)
+        // Extrai dados do Token (O jwtDecoder já deve estar validando a assinatura)
         Jwt jwt = jwtDecoder.decode(response.accessToken());
         String keycloakId = jwt.getSubject();
         String email = jwt.getClaimAsString("email");
         String nome = jwt.getClaimAsString("name");
 
         if (nome == null || nome.isBlank()) {
-            // Tenta o username (no seu caso, vai pegar "fds123")
+            // Tenta o username
             nome = jwt.getClaimAsString("preferred_username");
         }
 

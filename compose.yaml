@@ -116,18 +116,18 @@ services:
   # Descomente este bloco quando quiser rodar a app no Docker também.
   # Por enquanto deixamos comentado pois em dev você roda via IntelliJ/Maven.
 
-  finance-app:
-    build: .
-    container_name: finance-app
-    ports:
-      - "8080:8080"
-    environment:
-      SPRING_PROFILES_ACTIVE: dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+ # finance-app:
+  #  build: .
+  #  container_name: finance-app
+  #  ports:
+  #    - "8080:8080"
+  #  environment:
+  #    SPRING_PROFILES_ACTIVE: dev
+  #  depends_on:
+  #    postgres:
+  #      condition: service_healthy
+  #    redis:
+  #      condition: service_healthy
 
 volumes:
   postgres_data:
