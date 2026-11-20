@@ -3,8 +3,7 @@ package com.api.finance.notification.websocket;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtException;
+import com.api.finance.bff.service.AuthService;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -12,7 +11,6 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,7 +41,7 @@ import java.util.List;
 @Slf4j
 public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
-    private final JwtDecoder jwtDecoder;
+    private final AuthService authService;
 
     /**
      * Mapa: keycloakId → lista de sessões WebSocket ativas.
@@ -55,14 +53,14 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        String token = extrairToken(session);
-        if (token == null) {
-            recusarConexao(session, "Token ausente");
+        String sessionId = extrairSessionId(session);
+        if (sessionId == null) {
+            recusarConexao(session, "Cookie de sessão ausente");
             return;
         }
 
         try {
-            Jwt jwt = jwtDecoder.decode(token);
+            Jwt jwt = authService.autenticarSessao(sessionId);
             String keycloakId = jwt.getSubject();
 
             // Associa a sessão ao keycloakId
@@ -75,7 +73,7 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
             log.info("[WS] Conexão estabelecida: keycloakId={} sessionId={}", keycloakId, session.getId());
 
-        } catch (JwtException e) {
+        } catch (RuntimeException e) {
             recusarConexao(session, "Token inválido: " + e.getMessage());
         }
     }
@@ -146,20 +144,19 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
     // ── Helpers ────────────────────────────────────────────────────────────
 
     /**
-     * Extrai o token do query param: /ws/notifications?token=xxx
-     * Não usa Authorization header porque browsers não enviam headers customizados
-     * na abertura de conexões WebSocket.
+     * Reads the opaque HttpOnly session cookie from the WebSocket handshake.
+     * OAuth access and refresh tokens are never placed in the URL.
      */
-    private String extrairToken(WebSocketSession session) {
-        URI uri = session.getUri();
-        if (uri == null) return null;
-        String query = uri.getQuery();
-        if (query == null) return null;
+    private String extrairSessionId(WebSocketSession session) {
+        String cookieHeader = session.getHandshakeHeaders().getFirst("Cookie");
+        if (cookieHeader == null || cookieHeader.isBlank()) {
+            return null;
+        }
 
-        for (String param : query.split("&")) {
-            String[] kv = param.split("=", 2);
-            if (kv.length == 2 && "token".equals(kv[0])) {
-                return kv[1];
+        for (String cookie : cookieHeader.split(";")) {
+            String[] pair = cookie.trim().split("=", 2);
+            if (pair.length == 2 && "SESSION_ID".equals(pair[0])) {
+                return pair[1].isBlank() ? null : pair[1];
             }
         }
         return null;
