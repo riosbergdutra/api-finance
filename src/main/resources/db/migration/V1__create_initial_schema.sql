@@ -29,7 +29,6 @@ CREATE TABLE accounts (
     updated_at TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX idx_accounts_user_id ON accounts (user_id);
-CREATE INDEX idx_accounts_user_active ON accounts (user_id);
 
 CREATE TABLE categories (
     id UUID PRIMARY KEY,
