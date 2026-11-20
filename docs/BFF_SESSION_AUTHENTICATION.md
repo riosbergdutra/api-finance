@@ -18,9 +18,12 @@ Keycloak access or refresh tokens.
 6. Unsafe browser requests first obtain a CSRF token from `GET /auth/csrf` and
    send it in the `X-XSRF-TOKEN` header.
 7. `POST /auth/logout` revokes the refresh token when possible, deletes the
-   Redis session, and clears the browser cookie.
+   Redis session, closes WebSocket connections tied to that session, and clears
+   the browser cookie.
 
 WebSocket notifications use the same `SESSION_ID` cookie during the handshake.
+When a BFF session is revoked, the backend closes every WebSocket opened with
+that session, including connections from other tabs.
 OAuth tokens must never be placed in query strings, browser storage, or frontend
 JavaScript state.
 
@@ -42,7 +45,8 @@ authentication credential. The authentication cookie remains HttpOnly.
 
 - Keep Redis private and TLS-enabled in production.
 - Never log session IDs, access tokens, refresh tokens, authorization codes, or
-  CSRF tokens.
+  CSRF tokens. The Redis session entity excludes OAuth tokens from its generated
+  `toString()` output.
 - Keep the Keycloak client secret exclusively in backend secret storage.
 - Verify CORS origins, cookie settings, and the Keycloak redirect URI in each
   deployment environment.
