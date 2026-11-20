@@ -62,6 +62,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("listar: retorna orçamentos do mês/ano")
     void listarRetornaOrcamentos() {
+            stubUser();
         given(budgetRepository.findByUserIdAndMesAndAno(USER_ID, mes, ano)).willReturn(List.of(budget));
 
         List<BudgetResponse> result = budgetService.listar(mes, ano, caller);
@@ -78,6 +79,7 @@ class BudgetServiceTest {
         @Test
         @DisplayName("cria orçamento geral (sem categoria) com sucesso")
         void criaOrcamentoGeralComSucesso() {
+            stubUser();
             CreateBudgetRequest req = new CreateBudgetRequest(
                     null, BigDecimal.valueOf(2000), mes, ano, 80);
 
@@ -98,6 +100,7 @@ class BudgetServiceTest {
         @Test
         @DisplayName("cria orçamento por categoria com sucesso e calcula gasto atual")
         void criaOrcamentoPorCategoriaComGasto() {
+            stubUser();
             CreateBudgetRequest req = new CreateBudgetRequest(
                     CATEGORY_ID, BigDecimal.valueOf(500), mes, ano, null);
             Category cat = category();
@@ -116,6 +119,7 @@ class BudgetServiceTest {
         @Test
         @DisplayName("lança IllegalStateException quando orçamento duplicado para categoria/mês/ano")
         void lancaExcecaoDuplicado() {
+            stubUser();
             CreateBudgetRequest req = new CreateBudgetRequest(
                     CATEGORY_ID, BigDecimal.valueOf(500), mes, ano, null);
 
@@ -132,6 +136,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("atualizar: altera limite e alerta do orçamento")
     void atualizarOrcamento() {
+            stubUser();
         CreateBudgetRequest req = new CreateBudgetRequest(
                 null, BigDecimal.valueOf(1000), mes, ano, 75);
 
@@ -150,6 +155,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("deletar: remove orçamento com sucesso")
     void deletarOrcamento() {
+            stubUser();
         given(budgetRepository.findByIdAndUserId(BUDGET_ID, USER_ID)).willReturn(Optional.of(budget));
 
         assertThatCode(() -> budgetService.deletar(BUDGET_ID, caller)).doesNotThrowAnyException();
@@ -160,6 +166,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("deletar: lança BudgetNotFoundException quando não encontrado")
     void deletarLancaNotFound() {
+            stubUser();
         given(budgetRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> budgetService.deletar(UUID.randomUUID(), caller))
