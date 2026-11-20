@@ -4,7 +4,9 @@ import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.redis.core.RedisHash;
 
@@ -14,6 +16,8 @@ import java.io.Serializable;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString(exclude = {"accessToken", "refreshToken"})
+@EqualsAndHashCode(exclude = {"accessToken", "refreshToken"})
 @RedisHash(value = "auth_session", timeToLive = 2592000)
 public class AuthSession implements Serializable {
 
