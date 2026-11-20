@@ -26,6 +26,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -83,9 +84,9 @@ public class AuthService {
         garantirExistenciaUsuario(keycloakId, email, nome);
 
         // 4. Cria sessão no Redis
-        String sessionId = criarSessaoNoRedis(response.refreshToken(), keycloakId);
+        String sessionId = criarSessaoNoRedis(response.accessToken(), response.refreshToken(), keycloakId);
 
-        return new AuthResponseDTO(response.accessToken(), sessionId);
+        return new AuthResponseDTO(sessionId);
     }
 
 
@@ -124,13 +125,31 @@ public class AuthService {
                     session.getRefreshToken()
             );
 
+            session.setAccessToken(response.accessToken());
             session.setRefreshToken(response.refreshToken());
             sessionRepository.save(session);
 
-            return new AuthResponseDTO(response.accessToken(), sessionId);
+            return new AuthResponseDTO(sessionId);
         } catch (Exception e) {
             // Se o Keycloak rejeitar o Refresh Token, algo deu errado na integração
             throw new AuthIntegrationException("Não foi possível atualizar o token no Keycloak.");
+        }
+    }
+
+    /**
+     * Resolves the authenticated principal from the opaque browser session.
+     * Access and refresh tokens never leave this service.
+     */
+    public Jwt autenticarSessao(String sessionId) {
+        AuthSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
+        try {
+            return jwtDecoder.decode(session.getAccessToken());
+        } catch (JwtException expiredOrInvalid) {
+            refresh(sessionId);
+            AuthSession renewed = sessionRepository.findById(sessionId)
+                    .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
+            return jwtDecoder.decode(renewed.getAccessToken());
         }
     }
 
@@ -163,11 +182,12 @@ public class AuthService {
         log.info("Fluxo de exclusão concluído para o usuário: {}", user.id());
     }
 
-    private String criarSessaoNoRedis(String refreshToken, String keycloakId) {
+    private String criarSessaoNoRedis(String accessToken, String refreshToken, String keycloakId) {
         String sessionId = UUID.randomUUID().toString();
         AuthSession session = AuthSession.builder()
                 .sessionId(sessionId)
                 .keycloakId(keycloakId)
+                .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .build();
         sessionRepository.save(session);
