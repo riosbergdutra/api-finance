@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
 
@@ -20,6 +21,9 @@ import java.time.Duration;
 public class AuthController {
 
     private final AuthService authService;
+
+    @Value("${app.cookies.secure:true}")
+    private boolean secureCookies;
 
     @GetMapping("/login")
     public ResponseEntity<Void> login() {
@@ -85,7 +89,7 @@ public class AuthController {
     private void adicionarSessionCookie(HttpServletResponse response, String sessionId) {
         ResponseCookie cookie = ResponseCookie.from("SESSION_ID", sessionId)
                 .httpOnly(true)
-                .secure(false) // EM PRODUÇÃO: true
+                .secure(secureCookies)
                 .path("/")
                 .maxAge(Duration.ofDays(30))
                 .sameSite("Lax")
