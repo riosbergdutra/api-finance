@@ -5,9 +5,9 @@ O schema passa a ser versionado por migrations Flyway:
 
 - `V1__create_initial_schema.sql`: cria as nove tabelas persistidas pelas entidades JPA.
 - `V2__add_transaction_fingerprint_unique_index.sql`: valida duplicatas e cria
-  `idx_trx_hash` como índice único concorrente.
-- O arquivo `.sql.conf` da V2 define `executeInTransaction=false`, requisito
-  para `CREATE INDEX CONCURRENTLY`.
+  `idx_trx_hash` como índice único. A migration é transacional e funciona também
+  em banco novo; em banco legado grande, o índice pode ser criado previamente
+  com `CONCURRENTLY` conforme o procedimento abaixo, antes de aplicar V2.
 
 ## Banco novo
 
@@ -28,10 +28,14 @@ Procedimento controlado para cada banco legado:
 3. Confirme que os dados existentes são compatíveis com o modelo atual.
 4. Somente se o schema já corresponder à V1, registre a baseline Flyway na versão
    1 (a V1 será considerada já aplicada, sem recriar tabelas).
-5. Aplique V2. Ela interrompe a migration se houver fingerprints duplicados ou
+5. Verifique duplicatas. Para tabela grande, crie o índice com `CONCURRENTLY`
+   antes de aplicar V2, fora de uma transação explícita. A V2 valida a definição
+   e não recria um índice correto já existente. Para tabela pequena, deixe V2
+   criá-lo normalmente.
+6. Aplique V2. Ela interrompe a migration se houver fingerprints duplicados ou
    se encontrar um índice `idx_trx_hash` com definição incompatível.
-6. Verifique o histórico Flyway, o índice único e o funcionamento da aplicação.
-7. Só então habilite Flyway e Hibernate `ddl-auto=validate` no perfil daquele
+7. Verifique o histórico Flyway, o índice único e o funcionamento da aplicação.
+8. Só então habilite Flyway e Hibernate `ddl-auto=validate` no perfil daquele
    ambiente.
 
 Se o schema legado divergir, não force baseline: prepare uma migration de
