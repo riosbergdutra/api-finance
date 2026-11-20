@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,6 +31,11 @@ public class AuthController {
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @GetMapping("/csrf")
+    public CsrfToken csrf(CsrfToken csrfToken) {
+        return csrfToken;
+    }
 
     @GetMapping("/login")
     public ResponseEntity<Void> login(HttpServletResponse response) {
