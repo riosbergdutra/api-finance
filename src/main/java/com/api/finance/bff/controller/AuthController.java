@@ -30,6 +30,9 @@ public class AuthController {
     @Value("${app.cookies.secure:true}")
     private boolean secureCookies;
 
+    @Value("${app.cookies.same-site:Lax}")
+    private String cookieSameSite;
+
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
@@ -112,7 +115,7 @@ public class AuthController {
                 .secure(secureCookies)
                 .path("/auth/callback")
                 .maxAge(Duration.ofMinutes(5))
-                .sameSite("Lax")
+                .sameSite(cookieSameSite)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
