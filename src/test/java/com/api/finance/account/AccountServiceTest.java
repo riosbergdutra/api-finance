@@ -12,6 +12,7 @@ import com.api.finance.account.service.AccountService;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.TestFixtures;
 import com.api.finance.shared.exception.ResourceNotFoundException;
+import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +39,7 @@ class AccountServiceTest {
 
     @Mock AccountRepository accountRepository;
     @Mock UserRepository userRepository;
+    @Mock SubscriptionService subscriptionService;
     @InjectMocks AccountService accountService;
 
     AuthenticatedUser caller;
