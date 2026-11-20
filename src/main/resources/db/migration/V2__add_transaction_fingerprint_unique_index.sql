@@ -32,5 +32,5 @@ BEGIN
     END IF;
 END $$;
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_trx_hash
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trx_hash
     ON transactions (hash_deduplicacao);
