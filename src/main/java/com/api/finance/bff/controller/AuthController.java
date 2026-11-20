@@ -126,7 +126,7 @@ public class AuthController {
                 .secure(secureCookies)
                 .path("/auth/callback")
                 .maxAge(Duration.ZERO)
-                .sameSite("Lax")
+                .sameSite(cookieSameSite)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
@@ -137,7 +137,7 @@ public class AuthController {
                 .secure(secureCookies)
                 .path("/")
                 .maxAge(Duration.ofDays(30))
-                .sameSite("Lax")
+                .sameSite(cookieSameSite)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
@@ -148,7 +148,7 @@ public class AuthController {
                 .secure(secureCookies)
                 .path("/")
                 .maxAge(Duration.ZERO)
-                .sameSite("Lax")
+                .sameSite(cookieSameSite)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
