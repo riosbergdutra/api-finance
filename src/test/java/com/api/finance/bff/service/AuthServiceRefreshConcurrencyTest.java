@@ -81,7 +81,6 @@ class AuthServiceRefreshConcurrencyTest {
         AuthResponseDTO result = authService.refresh(sessionId);
 
         assertEquals(sessionId, result.sessionId());
-        verify(sessionRepository).findById(sessionId);
         verify(sessionRepository, org.mockito.Mockito.times(2)).findById(sessionId);
         verify(sessionRepository, never()).save(any(AuthSession.class));
         verify(restClient, never()).post();
