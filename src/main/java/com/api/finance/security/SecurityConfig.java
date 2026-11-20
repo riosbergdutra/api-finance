@@ -36,6 +36,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback", "/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/auth/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/auth/session").authenticated()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/users/**", "/users/**", "/accounts/**", "/transactions/**",
                                 "/categories/**", "/budgets/**", "/goals/**", "/notifications/**",
