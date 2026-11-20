@@ -16,17 +16,12 @@ spring:
   flyway:
     enabled: false
 
-app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
-  cookies:
-    secure: ${COOKIE_SECURE:true}
-    same-site: ${COOKIE_SAME_SITE:Lax}
-
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:default}
+      password: ${REDIS_PASSWORD:}
       connect-timeout: 2000ms
       timeout: 1000ms
       lettuce:
@@ -35,6 +30,13 @@ app:
           max-idle: 10
           min-idle: 2
           max-wait: 500ms
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  cookies:
+    secure: ${COOKIE_SECURE:true}
+    same-site: ${COOKIE_SAME_SITE:Lax}
 
 # ─── Resilience4j ──────────────────────────────────────────────────
 resilience4j:
