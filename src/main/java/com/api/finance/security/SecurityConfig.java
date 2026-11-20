@@ -26,6 +26,12 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
 
+    @Value("${app.cookies.secure:true}")
+    private boolean secureCookies;
+
+    @Value("${app.cookies.same-site:Lax}")
+    private String cookieSameSite;
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -47,7 +53,7 @@ public class SecurityConfig {
                         .anyRequest().denyAll()
                 )
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRepository(csrfTokenRepository())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                 )
                 .cors(Customizer.withDefaults())
@@ -72,6 +78,16 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    @Bean
+    public CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieCustomizer(cookie -> cookie
+                .path("/")
+                .secure(secureCookies)
+                .sameSite(cookieSameSite));
+        return repository;
     }
 
     @Bean
