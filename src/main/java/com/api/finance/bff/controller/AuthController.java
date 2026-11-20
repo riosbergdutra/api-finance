@@ -1,6 +1,8 @@
 package com.api.finance.bff.controller;
 
 import com.api.finance.bff.dto.AuthResponseDTO;
+import com.api.finance.bff.exceptions.AuthIntegrationException;
+import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.service.AuthService;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import jakarta.servlet.http.HttpServletResponse;
@@ -103,9 +105,15 @@ public class AuthController {
             AuthResponseDTO authResponse = authService.refresh(sessionId);
             adicionarSessionCookie(response, authResponse.sessionId());
             return ResponseEntity.ok(authResponse);
-        } catch (RuntimeException e) {
+        } catch (SessionNotFoundException e) {
             limparSessionCookie(response);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        } catch (AuthIntegrationException e) {
+            // A temporary Keycloak/Redis integration failure must not erase a
+            // browser session that may still be valid.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
     }
 
