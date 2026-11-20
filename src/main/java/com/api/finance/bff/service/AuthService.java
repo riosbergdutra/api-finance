@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.UUID;
 
@@ -51,6 +52,9 @@ public class AuthService {
 
     @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
     private String issuerUri;
+
+    @Value("${app.auth.redirect-uri:http://localhost:4200/auth/callback}")
+    private String redirectUri;
 
    @Retry(name = "keycloak")
     public AuthResponseDTO login(String code) {
@@ -176,7 +180,7 @@ public class AuthService {
         body.add(paramName, paramValue);
 
         if ("authorization_code".equals(grantType)) {
-            body.add("redirect_uri", "http://localhost:4200/auth/callback");
+            body.add("redirect_uri", redirectUri);
         }
 
         return restClient.post()
@@ -202,11 +206,14 @@ public class AuthService {
     }
 
     public String gerarUrlLogin() {
-        return issuerUri + "/protocol/openid-connect/auth" +
-                "?client_id=" + clientId +
-                "&response_type=code" +
-                "&scope=openid profile email" +
-                "&redirect_uri=http://localhost:4200/auth/callback";
+        return UriComponentsBuilder.fromUriString(issuerUri + "/protocol/openid-connect/auth")
+                .queryParam("client_id", clientId)
+                .queryParam("response_type", "code")
+                .queryParam("scope", "openid profile email")
+                .queryParam("redirect_uri", redirectUri)
+                .build()
+                .encode()
+                .toUriString();
     }
 
     private record KeycloakTokenResponse(
