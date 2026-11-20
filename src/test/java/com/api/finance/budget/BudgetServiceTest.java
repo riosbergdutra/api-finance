@@ -50,6 +50,10 @@ class BudgetServiceTest {
     void setUp() {
         caller = caller();
         budget = budget();
+
+    }
+
+    private void stubUser() {
         given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
@@ -78,6 +82,7 @@ class BudgetServiceTest {
                     null, BigDecimal.valueOf(2000), mes, ano, 80);
 
             given(budgetRepository.existsByUserIdAndCategoryIdAndMesAndAno(USER_ID, null, mes, ano)).willReturn(false);
+            given(transactionRepository.sumDespesaTotal(USER_ID, LocalDate.of(ano, mes, 1), LocalDate.of(ano, mes, 1).withDayOfMonth(LocalDate.of(ano, mes, 1).lengthOfMonth()))).willReturn(BigDecimal.ZERO);
             given(budgetRepository.save(any())).willAnswer(inv -> {
                 Budget b = inv.getArgument(0);
                 b.setId(BUDGET_ID);
