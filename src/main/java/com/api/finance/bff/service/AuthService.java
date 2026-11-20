@@ -6,6 +6,7 @@ import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.model.AuthSession;
 import  com.api.finance.bff.dto.AuthResponseDTO;
 import com.api.finance.bff.repository.AuthSessionRepository;
+import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
 import com.api.finance.user.model.User;
@@ -40,6 +41,7 @@ public class AuthService {
 
     private final RestClient restClient;
     private final AuthSessionRepository sessionRepository;
+    private final OAuthLoginAttemptStore loginAttemptStore;
     private final UserRepository userRepository;
     private final JwtDecoder jwtDecoder;
     private final AuthenticatedUserProvider userprovider;
@@ -173,6 +175,10 @@ public class AuthService {
     }
 
     private KeycloakTokenResponse buscarTokensNoKeycloak(String grantType, String paramName, String paramValue) {
+        return buscarTokensNoKeycloak(grantType, paramName, paramValue, null);
+    }
+
+    private KeycloakTokenResponse buscarTokensNoKeycloak(String grantType, String paramName, String paramValue, String codeVerifier) {
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("client_id", clientId);
         body.add("client_secret", clientSecret);
@@ -181,6 +187,7 @@ public class AuthService {
 
         if ("authorization_code".equals(grantType)) {
             body.add("redirect_uri", redirectUri);
+            body.add("code_verifier", codeVerifier);
         }
 
         return restClient.post()
@@ -205,12 +212,19 @@ public class AuthService {
                 .toBodilessEntity();
     }
 
-    public String gerarUrlLogin() {
+    public OAuthLoginAttemptStore.LoginAttempt iniciarLogin(String flowId) {
+        return loginAttemptStore.create(flowId);
+    }
+
+    public String gerarUrlLogin(OAuthLoginAttemptStore.LoginAttempt attempt) {
         return UriComponentsBuilder.fromUriString(issuerUri + "/protocol/openid-connect/auth")
                 .queryParam("client_id", clientId)
                 .queryParam("response_type", "code")
                 .queryParam("scope", "openid profile email")
                 .queryParam("redirect_uri", redirectUri)
+                .queryParam("state", attempt.state())
+                .queryParam("code_challenge", attempt.challenge())
+                .queryParam("code_challenge_method", "S256")
                 .build()
                 .encode()
                 .toUriString();
