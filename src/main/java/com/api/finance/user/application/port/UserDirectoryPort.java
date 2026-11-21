@@ -1,5 +1,6 @@
 package com.api.finance.user.application.port;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -8,6 +9,8 @@ import java.util.UUID;
  * Expõe identidade e operações de ciclo de vida sem vazar User/JPA ou UserRepository.
  */
 public interface UserDirectoryPort {
+
+    List<UserIdentity> findPage(int page, int size);
 
     Optional<UUID> findInternalUserId(UUID identityProviderUserId);
 
