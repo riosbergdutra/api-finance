@@ -6,6 +6,7 @@ import com.api.finance.export.exception.ExportLimitExceededException;
 import com.api.finance.bff.dto.ErrorResponseDTO;
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
+import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.budget.exception.BudgetNotFoundException;
 import com.api.finance.category.exception.CategoryNotFoundException;
 import com.api.finance.goal.exception.GoalNotFoundException;
@@ -59,6 +60,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(IllegalArgumentException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OAuthLoginAttemptStore.InvalidOAuthLoginAttemptException.class)
+    public ResponseEntity<ErrorResponseDTO> handleInvalidOAuthAttempt(
+            OAuthLoginAttemptStore.InvalidOAuthLoginAttemptException ex) {
+        return buildResponse("Tentativa de autenticação inválida ou expirada.", HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalStateException.class)
