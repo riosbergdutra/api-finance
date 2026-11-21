@@ -66,7 +66,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("listar: retorna apenas pendentes quando apenasPendentes=true")
     void listarApenasPendentes() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         given(goalRepository.findByUserIdAndConcluidaFalse(USER_ID)).willReturn(List.of(goal));
 
         List<GoalResponse> result = goalService.listar(true, caller);
@@ -80,7 +80,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("criar: salva nova meta com dados corretos")
     void criarMetaComSucesso() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         CreateGoalRequest req = new CreateGoalRequest(
                 "Notebook", BigDecimal.valueOf(3000), LocalDate.now().plusMonths(6), "#FF0000", "laptop");
 
@@ -102,7 +102,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("atualizar: lança IllegalStateException quando meta já concluída")
     void atualizarMetaConcluida() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         goal.setConcluida(true);
         given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
@@ -121,7 +121,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("adiciona valor e não conclui quando ainda abaixo do alvo")
         void adicionaValorSemConcluir() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, alvo=5000, deposito=500 → 1500 (ainda pendente)
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(500));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -136,7 +136,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("conclui automaticamente quando atinge o alvo")
         void concluiAutomaticamenteAoAtingirAlvo() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, alvo=5000, deposito=4000 → 5000 = concluída
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(4000));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -150,7 +150,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("conclui automaticamente quando ultrapassa o alvo")
         void concluiQuandoUltrapassaAlvo() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(99999));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
             given(goalRepository.save(any())).willReturn(goal);
@@ -163,7 +163,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("lança IllegalStateException quando meta já concluída")
         void lancaExcecaoMetaConcluida() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             goal.setConcluida(true);
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
@@ -180,7 +180,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("subtrai valor com sucesso")
         void sacaComSucesso() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, saque=300 → 700
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(300));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -195,7 +195,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("lança IllegalArgumentException quando saque excede valor atual")
         void lancaExcecaoSaqueExcede() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, saque=2000
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(2000));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -211,7 +211,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("concluir: marca meta como concluída manualmente")
     void concluirManualmente() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
         given(goalRepository.save(any())).willReturn(goal);
 
@@ -225,7 +225,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("deletar: remove meta com sucesso")
     void deletarComSucesso() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
         assertThatCode(() -> goalService.deletar(GOAL_ID, caller)).doesNotThrowAnyException();
@@ -236,7 +236,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("deletar: lança GoalNotFoundException quando não encontrada")
     void deletarLancaNotFound() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         given(goalRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.deletar(UUID.randomUUID(), caller))
@@ -251,7 +251,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("retorna estimativa positiva quando há ritmo de depósito")
         void retornaEstimativaPositiva() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000 em 10 dias → ritmo=100/dia. Restante=4000 → ~40 dias
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
@@ -263,7 +263,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("retorna -1 quando meta já concluída")
         void retornaNegativoMetaConcluida() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             goal.setConcluida(true);
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
@@ -275,7 +275,7 @@ class GoalServiceTest {
         @Test
         @DisplayName("retorna -1 quando valorAtual é zero")
         void retornaNegativoSemDepositos() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             goal.setValorAtual(BigDecimal.ZERO);
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
