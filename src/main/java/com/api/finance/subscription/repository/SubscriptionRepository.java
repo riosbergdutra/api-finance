@@ -1,6 +1,5 @@
 package com.api.finance.subscription.repository;
 
-import com.api.finance.subscription.model.PlanType;
 import com.api.finance.subscription.model.Subscription;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -22,12 +21,16 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
 
     Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Subscription s WHERE s.stripeSubscriptionId = :stripeSubscriptionId")
+    Optional<Subscription> findByStripeSubscriptionIdForUpdate(
+            @Param("stripeSubscriptionId") String stripeSubscriptionId);
+
     /** Serializa verificações de limites e criação de recursos por usuário. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Subscription s WHERE s.userId = :userId")
     Optional<Subscription> findByUserIdForUpdate(@Param("userId") UUID userId);
 
-    /** Cria FREE apenas se ainda não existir, sem corrida entre requisições concorrentes. */
     @Modifying
     @Query(value = """
         INSERT INTO subscription (id, user_id, plano, status)
@@ -36,8 +39,6 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
         """, nativeQuery = true)
     int insertFreeIfAbsent(@Param("id") UUID id, @Param("userId") UUID userId);
 
-
-    /** Assinaturas PRO que expiram nos próximos N dias — usado pelo scheduler de alertas */
     @Query("""
         SELECT s FROM Subscription s
         WHERE s.plano = 'PRO'
@@ -45,9 +46,8 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
           AND s.fimPeriodo BETWEEN :hoje AND :limite
         """)
     List<Subscription> findProExpirandoAte(@Param("hoje") LocalDate hoje,
-                                            @Param("limite") LocalDate limite);
+                                           @Param("limite") LocalDate limite);
 
-    /** Assinaturas PRO expiradas que ainda não foram marcadas como EXPIRED */
     @Query("""
         SELECT s FROM Subscription s
         WHERE s.plano = 'PRO'
