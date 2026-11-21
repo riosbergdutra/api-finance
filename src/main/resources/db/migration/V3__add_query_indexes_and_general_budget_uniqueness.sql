@@ -34,7 +34,8 @@ CREATE INDEX IF NOT EXISTS idx_subscription_plan_expiration
     ON subscription (plano, fim_periodo, status);
 
 -- Contagem e soma de contas ativas por usuário.
-CREATE INDEX IF NOT EXISTS idx_accounts_user_active
+-- Nome distinto do índice legado idx_accounts_user_active (user_id).
+CREATE INDEX IF NOT EXISTS idx_accounts_user_active_status
     ON accounts (user_id, is_active);
 
 -- Busca dos orçamentos de um usuário por mês/ano.
