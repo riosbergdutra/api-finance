@@ -33,6 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -69,17 +72,17 @@ public class TransactionService {
     public TransactionResponse criar(CreateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        // Verifica limite do plano FREE
         LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
-        LocalDate fimMes    = inicioMes.withDayOfMonth(inicioMes.lengthOfMonth());
+        LocalDate fimMes = inicioMes.withDayOfMonth(inicioMes.lengthOfMonth());
         long transacoesNoMes = transactionRepository.countByUserIdAndMes(userId, inicioMes, fimMes);
         subscriptionService.assertPodeCriarTransacao(userId, transacoesNoMes);
 
-        // Garante ownership da conta
-        Account account = accountRepository.findByIdAndUserIdForUpdate(req.accountId(), userId)
-                .orElseThrow(() -> new AccountNotFoundException("Conta não encontrada: " + req.accountId()));
+        UUID destinationAccountId = resolveDestinationAccountId(
+                req.tipo(), req.accountId(), req.contaDestinoId());
+        Map<UUID, Account> lockedAccounts = lockAccounts(userId, req.accountId(), destinationAccountId);
+        Account account = lockedAccounts.get(req.accountId());
+        Account destinationAccount = destinationAccountId == null ? null : lockedAccounts.get(destinationAccountId);
 
-        // Impressão digital de domínio: SHA-256 determinístico e sem fallback aleatório.
         String fingerprint = TransactionFingerprint.of(
                 userId, req.accountId(), req.valor(), req.data(), req.descricao()
         ).value();
@@ -88,18 +91,18 @@ public class TransactionService {
         TransactionStatus status = req.status() != null ? req.status() : TransactionStatus.CONFIRMADA;
         UUID transactionId = UUID.randomUUID();
 
-        // O INSERT ... ON CONFLICT é a garantia atômica no PostgreSQL.
-        // A consulta prévia fornece uma mensagem amigável no caminho comum;
-        // o índice UNIQUE continua protegendo a corrida entre requisições.
         if (transactionRepository.existsByHashDeduplicacao(fingerprint)) {
             throw new DuplicateTransactionException();
         }
+
+        boolean destinationBalanceApplied =
+                destinationAccountId != null && status == TransactionStatus.CONFIRMADA;
 
         int inserted = transactionRepository.insertIfFingerprintAbsent(
                 transactionId,
                 userId,
                 account.getId(),
-                req.tipo() == TransactionType.TRANSFERENCIA ? req.contaDestinoId() : null,
+                destinationAccountId,
                 category != null ? category.getId() : null,
                 req.tipo().name(),
                 status.name(),
@@ -107,25 +110,30 @@ public class TransactionService {
                 req.descricao(),
                 req.estabelecimento(),
                 req.data(),
-                fingerprint
+                fingerprint,
+                destinationBalanceApplied
         );
 
         if (inserted == 0) {
             throw new IllegalStateException("Transação duplicada detectada.");
         }
 
-        // Efeitos financeiros só acontecem depois de confirmar que o INSERT venceu.
-        // Tudo permanece na mesma transação SQL: falha no saldo reverte também o INSERT.
+        // Origem e destino são bloqueados em ordem determinística e atualizados
+        // na mesma transação SQL do lançamento.
         if (status == TransactionStatus.CONFIRMADA) {
             ajustarSaldo(account, req.tipo(), req.valor());
             accountRepository.save(account);
+
+            if (destinationBalanceApplied) {
+                destinationAccount.setBalance(destinationAccount.getBalance().add(req.valor()));
+                accountRepository.save(destinationAccount);
+            }
         }
 
         Transaction saved = transactionRepository.findByIdAndUserId(transactionId, userId)
                 .orElseThrow(() -> new IllegalStateException("Transação inserida, mas não foi possível recuperá-la."));
         log.info("Transação criada: id={} user={} tipo={}", saved.getId(), userId, req.tipo());
 
-        // FIX: eventos publicados APÓS salvar — listener executa só após commit
         String keycloakId = caller.id().toString();
 
         if (status == TransactionStatus.PENDENTE) {
@@ -134,40 +142,56 @@ public class TransactionService {
             ));
         }
 
-        if (status == TransactionStatus.CONFIRMADA && account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+        if (status == TransactionStatus.CONFIRMADA
+                && account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
             eventPublisher.publishEvent(new FinanceEvents.ContaSaldoNegativoEvent(
                     keycloakId, userId, account.getId(), account.getName(), account.getBalance()
             ));
         }
 
-        // FIX: orçamentos guardam valorGasto persistido (não é calculado on-the-fly),
-        // então toda mudança em transação precisa recalcular o mês/ano afetado.
         recalcularOrcamentoSeNecessario(userId, req.tipo(), status, req.data());
-
         return TransactionResponse.de(saved);
     }
 
-    @Transactional
+        @Transactional
     public TransactionResponse atualizar(UUID id, UpdateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
         Transaction trx = transactionRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
 
-        // Reverte saldo anterior se estava confirmada
-        Account account = accountRepository.findByIdAndUserIdForUpdate(trx.getAccountId(), userId)
-                .orElseThrow(() -> new AccountNotFoundException("Conta não encontrada"));
-
-        if (trx.getStatus() == TransactionStatus.CONFIRMADA) {
-            reverterSaldo(account, trx.getTipo(), trx.getValor());
-            accountRepository.save(account);
+        boolean previousDestinationApplied = trx.isTransferDestinationApplied();
+        if (previousDestinationApplied
+                && (trx.getTipo() != TransactionType.TRANSFERENCIA
+                || trx.getContaDestinoId() == null
+                || trx.getContaDestinoId().equals(trx.getAccountId())
+                || trx.getStatus() != TransactionStatus.CONFIRMADA)) {
+            throw new IllegalStateException("Estado de saldo da transferência inconsistente; atualização bloqueada.");
         }
 
-        // Guarda estado anterior para recalcular o orçamento do período antigo também,
-        // caso a transação tenha mudado de mês/tipo/status na edição.
+        UUID newDestinationAccountId = resolveDestinationAccountId(
+                req.tipo(), trx.getAccountId(), trx.getContaDestinoId());
+        UUID destinationAccountIdToLock = previousDestinationApplied
+                ? trx.getContaDestinoId()
+                : newDestinationAccountId;
+
+        Map<UUID, Account> lockedAccounts = lockAccounts(
+                userId, trx.getAccountId(), destinationAccountIdToLock);
+        Account account = lockedAccounts.get(trx.getAccountId());
+        Account destinationAccount = destinationAccountIdToLock == null
+                ? null
+                : lockedAccounts.get(destinationAccountIdToLock);
+
         TransactionType tipoAntigo = trx.getTipo();
         TransactionStatus statusAntigo = trx.getStatus();
         LocalDate dataAntiga = trx.getData();
+
+        if (statusAntigo == TransactionStatus.CONFIRMADA) {
+            reverterSaldo(account, tipoAntigo, trx.getValor());
+            if (previousDestinationApplied) {
+                destinationAccount.setBalance(destinationAccount.getBalance().subtract(trx.getValor()));
+            }
+        }
 
         Category category = resolveCategoria(req.categoryId(), req.estabelecimento(), userId);
         trx.setCategory(category);
@@ -178,15 +202,22 @@ public class TransactionService {
         trx.setEstabelecimento(req.estabelecimento());
         trx.setData(req.data());
 
-        // Aplica novo saldo se confirmada
         if (req.status() == TransactionStatus.CONFIRMADA) {
             ajustarSaldo(account, req.tipo(), req.valor());
-            accountRepository.save(account);
+            if (newDestinationAccountId != null) {
+                destinationAccount.setBalance(destinationAccount.getBalance().add(req.valor()));
+            }
+        }
+
+        trx.setTransferDestinationApplied(
+                req.status() == TransactionStatus.CONFIRMADA && newDestinationAccountId != null);
+
+        accountRepository.save(account);
+        if (destinationAccount != null) {
+            accountRepository.save(destinationAccount);
         }
 
         Transaction saved = transactionRepository.save(trx);
-
-        // FIX: eventos de atualização
         String keycloakId = caller.id().toString();
 
         if (req.status() == TransactionStatus.PENDENTE) {
@@ -195,42 +226,52 @@ public class TransactionService {
             ));
         }
 
-        if (req.status() == TransactionStatus.CONFIRMADA && account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+        if (req.status() == TransactionStatus.CONFIRMADA
+                && account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
             eventPublisher.publishEvent(new FinanceEvents.ContaSaldoNegativoEvent(
                     keycloakId, userId, account.getId(), account.getName(), account.getBalance()
             ));
         }
 
-        // FIX: recalcula o orçamento do período antigo (caso a transação tenha "saído" dele)
-        // e do período novo (caso tenha "entrado" nele ou apenas mudado de valor/categoria).
         recalcularOrcamentoSeNecessario(userId, tipoAntigo, statusAntigo, dataAntiga);
         recalcularOrcamentoSeNecessario(userId, req.tipo(), req.status(), req.data());
-
         return TransactionResponse.de(saved);
     }
 
-    @Transactional
+        @Transactional
     public void deletar(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
         Transaction trx = transactionRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
 
+        if (trx.isTransferDestinationApplied()
+                && (trx.getTipo() != TransactionType.TRANSFERENCIA
+                || trx.getContaDestinoId() == null
+                || trx.getContaDestinoId().equals(trx.getAccountId()))) {
+            throw new IllegalStateException("Estado de saldo da transferência inconsistente; exclusão bloqueada.");
+        }
+
         if (trx.getStatus() == TransactionStatus.CONFIRMADA) {
-            accountRepository.findByIdAndUserIdForUpdate(trx.getAccountId(), userId).ifPresent(acc -> {
-                reverterSaldo(acc, trx.getTipo(), trx.getValor());
-                accountRepository.save(acc);
-            });
+            UUID destinationId = trx.isTransferDestinationApplied() ? trx.getContaDestinoId() : null;
+            Map<UUID, Account> lockedAccounts = lockAccounts(userId, trx.getAccountId(), destinationId);
+            Account account = lockedAccounts.get(trx.getAccountId());
+            reverterSaldo(account, trx.getTipo(), trx.getValor());
+            accountRepository.save(account);
+
+            if (destinationId != null) {
+                Account destinationAccount = lockedAccounts.get(destinationId);
+                destinationAccount.setBalance(destinationAccount.getBalance().subtract(trx.getValor()));
+                accountRepository.save(destinationAccount);
+            }
         }
 
         transactionRepository.delete(trx);
         log.info("Transação removida: id={} user={}", id, userId);
-
-        // FIX: o orçamento do período da transação removida precisa refletir a remoção.
         recalcularOrcamentoSeNecessario(userId, trx.getTipo(), trx.getStatus(), trx.getData());
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+        // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
      * FIX: Budget.valorGasto é um campo persistido, não calculado on-the-fly —
@@ -245,6 +286,45 @@ public class TransactionService {
         if (tipo == TransactionType.DESPESA && status == TransactionStatus.CONFIRMADA && data != null) {
             budgetService.recalcularGastos(userId, data.getMonthValue(), data.getYear());
         }
+    }
+
+    private UUID resolveDestinationAccountId(
+            TransactionType type, UUID sourceAccountId, UUID destinationAccountId) {
+        if (type != TransactionType.TRANSFERENCIA) {
+            return null;
+        }
+        if (destinationAccountId == null) {
+            throw new IllegalArgumentException("Conta de destino é obrigatória para transferências.");
+        }
+        if (destinationAccountId.equals(sourceAccountId)) {
+            throw new IllegalArgumentException("A conta de origem e destino da transferência devem ser diferentes.");
+        }
+        return destinationAccountId;
+    }
+
+    /**
+     * Bloqueia todas as contas financeiras em ordem determinística para reduzir
+     * deadlocks em transferências simultâneas entre as mesmas contas.
+     */
+    private Map<UUID, Account> lockAccounts(UUID userId, UUID... accountIds) {
+        if (accountIds.length == 0 || accountIds[0] == null) {
+            throw new IllegalArgumentException("Conta de origem é obrigatória.");
+        }
+
+        TreeSet<UUID> orderedIds = new TreeSet<>();
+        for (UUID accountId : accountIds) {
+            if (accountId != null) {
+                orderedIds.add(accountId);
+            }
+        }
+
+        Map<UUID, Account> accounts = new HashMap<>();
+        for (UUID accountId : orderedIds) {
+            Account account = accountRepository.findByIdAndUserIdForUpdate(accountId, userId)
+                    .orElseThrow(() -> new AccountNotFoundException("Conta não encontrada: " + accountId));
+            accounts.put(accountId, account);
+        }
+        return accounts;
     }
 
     private void ajustarSaldo(Account account, TransactionType tipo, BigDecimal valor) {
