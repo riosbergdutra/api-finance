@@ -5,7 +5,7 @@ import com.api.finance.notification.service.NotificationService;
 import com.api.finance.subscription.model.Subscription;
 import com.api.finance.subscription.repository.SubscriptionRepository;
 import com.api.finance.subscription.service.SubscriptionService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,7 +31,7 @@ public class SubscriptionExpirationScheduler {
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionService subscriptionService;
     private final NotificationService notificationService;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
 
     @Scheduled(cron = "0 0 0 * * *", zone = "America/Sao_Paulo")
     public void processarExpiracoes() {
@@ -44,10 +44,10 @@ public class SubscriptionExpirationScheduler {
         List<Subscription> expirando = subscriptionRepository.findProExpirandoAte(hoje, em7Dias);
         for (Subscription sub : expirando) {
             long dias = sub.diasRestantes();
-            userRepository.findById(sub.getUserId()).ifPresent(user -> {
+            userDirectory.findIdentityProviderId(sub.getUserId()).ifPresent(identityProviderId -> {
                 notificationService.criarNotificacao(
-                        user.getKeycloakId().toString(),
-                        user.getId(),
+                        identityProviderId.toString(),
+                        sub.getUserId(),
                         NotificationType.ASSINATURA_EXPIRANDO,
                         "Assinatura PRO expirando",
                         String.format("Sua assinatura PRO vence em %d dia(s). Renove para continuar com acesso ilimitado.", dias)
