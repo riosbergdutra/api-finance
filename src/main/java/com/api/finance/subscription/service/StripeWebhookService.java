@@ -174,7 +174,7 @@ public class StripeWebhookService {
             }
 
             log.info("[Stripe] Subscription cancelada/expirada: id={}", stripeSub.getId());
-            subscriptionService.expirarAssinaturasVencidas();
+            subscriptionService.expirarPorStripeSubscriptionId(stripeSub.getId());
 
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao processar customer.subscription.deleted.", e);
