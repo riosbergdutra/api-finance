@@ -2,7 +2,6 @@ package com.api.finance.subscription;
 
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.events.FinanceEvents;
-import com.api.finance.notification.service.NotificationService;
 import com.api.finance.subscription.dto.SubscriptionResponse;
 import com.api.finance.subscription.model.PlanType;
 import com.api.finance.subscription.model.Subscription;
@@ -40,8 +39,6 @@ class SubscriptionServiceIdentityTest {
     @Mock
     private UserDirectoryPort userDirectory;
     @Mock
-    private NotificationService notificationService;
-    @Mock
     private StripeService stripeService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -53,7 +50,6 @@ class SubscriptionServiceIdentityTest {
         service = new SubscriptionService(
                 subscriptionRepository,
                 userDirectory,
-                notificationService,
                 stripeService,
                 eventPublisher
         );
