@@ -14,6 +14,7 @@ FinanceFlow uses a Backend-for-Frontend (BFF) session model. The browser never r
 
 ## Session lifecycle and WebSockets
 
+- Login/session creation, refresh, logout, and account erasure are serialized by a per-Keycloak-identity Redis lock, preventing a refresh or callback from recreating a session after account-wide revocation.
 - Every new Redis session is indexed by Keycloak subject in a Redis set and by Spring Data Redis secondary index.
 - Account deletion enumerates all indexed sessions, includes a scan for pre-index legacy sessions, deletes them, and broadcasts each revocation before deleting the provider identity.
 - WebSocket sockets retain only the opaque BFF session ID in server-side attributes. The browser sends the HttpOnly cookie in the handshake; OAuth tokens never appear in the URL.
