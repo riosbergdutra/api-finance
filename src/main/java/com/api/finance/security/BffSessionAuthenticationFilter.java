@@ -20,6 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -82,11 +83,21 @@ public class BffSessionAuthenticationFilter extends OncePerRequestFilter {
         if (cookies == null) {
             return null;
         }
-        return Arrays.stream(cookies)
+        var sessionCookies = Arrays.stream(cookies)
                 .filter(cookie -> SESSION_COOKIE.equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .filter(value -> value != null && !value.isBlank())
-                .findFirst()
-                .orElse(null);
+                .toList();
+        if (sessionCookies.size() != 1) {
+            return null;
+        }
+        String value = sessionCookies.get(0).getValue();
+        if (value == null || value.length() != 36) {
+            return null;
+        }
+        try {
+            UUID.fromString(value);
+            return value;
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
     }
 }
