@@ -212,8 +212,13 @@ public class TransactionService {
         trx.setTransferDestinationApplied(
                 req.status() == TransactionStatus.CONFIRMADA && newDestinationAccountId != null);
 
-        accountRepository.save(account);
-        if (destinationAccount != null) {
+        if (statusAntigo == TransactionStatus.CONFIRMADA
+                || req.status() == TransactionStatus.CONFIRMADA) {
+            accountRepository.save(account);
+        }
+        if (destinationAccount != null
+                && (previousDestinationApplied
+                || (req.status() == TransactionStatus.CONFIRMADA && newDestinationAccountId != null))) {
             accountRepository.save(destinationAccount);
         }
 
