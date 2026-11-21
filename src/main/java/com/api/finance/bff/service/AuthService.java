@@ -7,7 +7,6 @@ import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.model.AuthSession;
 import com.api.finance.bff.dto.AuthResponseDTO;
 import com.api.finance.bff.repository.AuthSessionRepository;
-import com.api.finance.bff.service.KeycloakAdminClient;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
@@ -47,7 +46,7 @@ public class AuthService {
 
     private final RestClient restClient;
     private final AuthSessionRepository sessionRepository;
-    private final KeycloakAdminClient keycloakAdminClient;
+    private final KeycloakAccountDeletionProcessor accountDeletionProcessor;
     private final StringRedisTemplate redis;
     private final OAuthLoginAttemptStore loginAttemptStore;
     private final UserDirectoryPort userDirectory;
@@ -240,13 +239,12 @@ public class AuthService {
         userDirectory.findInternalUserId(keycloakId)
                 .ifPresent(subscriptionAccountDeletion::cancelarParaExclusao);
 
-        // A operação remota é idempotente. Se Keycloak/Redis estiver indisponível,
-        // não apagamos os dados locais parcialmente: o cliente recebe falha e pode
-        // repetir a exclusão depois de restabelecida a integração.
-        keycloakAdminClient.deleteUser(keycloakId);
+        // A exclusão local e a criação da solicitação durável são atômicas.
+        // Se o Admin API estiver indisponível, o outbox retenta sem recriar a conta.
         userDirectory.deleteByIdentityProviderId(keycloakId);
+        accountDeletionProcessor.processOne(keycloakId);
 
-        log.info("Exclusão de conta concluída; sessões BFF revogadas e identidade removida do provedor.");
+        log.info("Dados locais removidos e exclusão da identidade encaminhada para processamento durável.");
     }
 
     private String criarSessaoNoRedis(String accessToken, String refreshToken, String keycloakId) {
