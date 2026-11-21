@@ -15,6 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import com.api.finance.user.exception.UserIdentityDeletedException;
 
 /** Adaptador que mantém a persistência de identidade sob propriedade do módulo User. */
 @Component
@@ -54,6 +59,9 @@ public class UserDirectoryAdapter implements UserDirectoryPort {
     @Override
     @Transactional
     public void registerIfAbsent(UUID identityProviderUserId, String email, String name) {
+        if (isIdentityDeleted(identityProviderUserId)) {
+            throw new UserIdentityDeletedException();
+        }
         if (userRepository.existsByKeycloakId(identityProviderUserId)) {
             return;
         }
@@ -73,6 +81,18 @@ public class UserDirectoryAdapter implements UserDirectoryPort {
     @Override
     @Transactional
     public void deleteByIdentityProviderId(UUID identityProviderUserId) {
+        String identityHash = hashIdentity(identityProviderUserId);
+        jdbcTemplate.update("""
+                INSERT INTO deleted_user_identities (identity_hash)
+                VALUES (?)
+                ON CONFLICT (identity_hash) DO NOTHING
+                """, identityHash);
+        jdbcTemplate.update("""
+                INSERT INTO account_deletion_outbox (keycloak_id)
+                VALUES (?)
+                ON CONFLICT (keycloak_id) DO NOTHING
+                """, identityProviderUserId);
+
         userRepository.findByKeycloakId(identityProviderUserId).ifPresent(user -> {
             UUID userId = user.getId();
 
@@ -97,5 +117,23 @@ public class UserDirectoryAdapter implements UserDirectoryPort {
 
             userRepository.delete(user);
         });
+    }
+ 
+    private boolean isIdentityDeleted(UUID identityProviderUserId) {
+        Boolean deleted = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM deleted_user_identities WHERE identity_hash = ?)",
+                Boolean.class,
+                hashIdentity(identityProviderUserId));
+        return Boolean.TRUE.equals(deleted);
+    }
+
+    private String hashIdentity(UUID identityProviderUserId) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(identityProviderUserId.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 não está disponível.", impossible);
+        }
     }
 }
