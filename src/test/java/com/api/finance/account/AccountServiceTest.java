@@ -235,7 +235,7 @@ class AccountServiceTest {
     @Test
     @DisplayName("lança ResourceNotFoundException quando usuário não encontrado no banco")
     void lancaNotFoundQuandoUsuarioInexistente() {
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.empty());
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> accountService.listActiveAccounts(caller))
                 .isInstanceOf(ResourceNotFoundException.class);
