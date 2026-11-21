@@ -153,7 +153,6 @@ public class GoalService {
     @Transactional
     public GoalResponse concluir(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        User user = resolveUser(caller);
 
         Goal goal = goalRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
@@ -165,7 +164,7 @@ public class GoalService {
         // Só notifica se acabou de concluir agora
         if (!jaConcluida) {
             eventPublisher.publishEvent(new FinanceEvents.MetaConcluidaEvent(
-                    user.getKeycloakId().toString(),
+                    caller.id().toString(),
                     userId,
                     saved.getId(),
                     saved.getNome(),
