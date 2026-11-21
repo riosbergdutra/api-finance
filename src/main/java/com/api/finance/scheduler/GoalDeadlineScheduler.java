@@ -33,6 +33,7 @@ public class GoalDeadlineScheduler {
     private final NotificationService notificationService;
 
     @Scheduled(cron = "0 0 8 * * *", zone = "America/Sao_Paulo")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "goalDeadlineScheduler", lockAtMostFor = "PT4H", lockAtLeastFor = "PT30S")
     public void verificarPrazosDeMetAs() {
         log.info("[Scheduler] Verificando prazos de metas");
         LocalDate hoje  = LocalDate.now();
