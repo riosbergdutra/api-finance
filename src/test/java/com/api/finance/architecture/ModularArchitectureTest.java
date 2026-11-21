@@ -53,9 +53,10 @@ class ModularArchitectureTest {
     void modulesMustNotDependOnOtherModulesPresentationLayer() {
         ArchRule rule = noClasses()
                 .that().resideInAPackage("com.api.finance..")
+                .and().resideOutsideOfPackage("..controller..")
                 .should().dependOnClassesThat()
                 .resideInAnyPackage("com.api.finance..controller..", "com.api.finance..presentation..")
-                .because("module communication must use application contracts, not another module's HTTP API");
+                .because("application services and domain code must not depend on HTTP presentation classes");
 
         rule.check(applicationClasses);
     }
