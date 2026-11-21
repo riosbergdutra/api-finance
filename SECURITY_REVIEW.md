@@ -12,13 +12,13 @@ This review separates code changes from external configuration and operational c
 - [x] Production requires an explicit API audience and the JWT decoder rejects tokens without that `aud` value.
 - [x] Refresh operations use a Redis distributed lock, re-read the rotated refresh token, and release the lock with compare-owner Lua.
 - [x] Logout removes the local Redis session before best-effort Keycloak token revocation.
-- [x] Account deletion revokes all indexed BFF sessions, closes their WebSockets, deletes the Keycloak identity through a separate service-account client, and transactionally removes user-owned rows from transactions, budgets, merchant rules, categories, goals, notifications, subscriptions, accounts, and users.
+- [x] Account deletion revokes all indexed BFF sessions, closes their WebSockets, cancels recurring Stripe billing before erasure, deletes the Keycloak identity through a separate service-account client, and transactionally removes user-owned rows from transactions, budgets, merchant rules, categories, goals, notifications, subscriptions, accounts, and users.
 - [x] Account deletion includes a one-time Redis session scan to include sessions created before the per-user index was introduced.
 - [x] WebSocket revocation is broadcast through Redis Pub/Sub and periodically revalidated against Redis; repeated Redis failures close local sockets (fail-closed).
 - [x] Stripe webhook signatures are verified before processing; live-mode events are rejected.
 - [x] Stripe event IDs are persisted in a PostgreSQL inbox in the same transaction as subscription changes, so duplicates are ignored and failed processing can be retried.
 - [x] Recurring subscription updates use pessimistic row locking and persist the latest provider event timestamp/ID (V7); older events are ignored.
-- [x] Non-active recurring Stripe states do not grant PRO; a cancellation event cannot be undone by an older event.
+- [x] Non-active recurring Stripe states do not grant PRO; a cancellation event cannot be undone by an older event. Events for deleted local users cannot recreate orphan subscription rows.
 - [x] Stripe subscription IDs are unique locally (V6); deletion targets the exact matching subscription.
 - [x] Production uses Flyway and Hibernate validate; database migrations are versioned V1–V7.
 - [x] Bounded HikariCP pool and explicit HTTP connect/read timeouts are configured.
