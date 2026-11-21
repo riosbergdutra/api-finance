@@ -90,11 +90,39 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void planoProComPeriodoExpiradoNaoDeveSerConsideradoAtivo() {
+        Subscription expiredByDate = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.PRO)
+                .status(SubscriptionStatus.ACTIVE)
+                .fimPeriodo(LocalDate.now().minusDays(1))
+                .build();
+        when(subscriptionRepository.findByUserId(INTERNAL_USER_ID)).thenReturn(Optional.of(expiredByDate));
+
+        assertThrows(PlanLimitExceededException.class,
+                () -> service.assertIsPro(INTERNAL_USER_ID, "Exportação PDF"));
+    }
+
+    @Test
+    void planoProSemFimDePeriodoDeveFalharFechado() {
+        Subscription withoutPeriod = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.PRO)
+                .status(SubscriptionStatus.ACTIVE)
+                .build();
+        when(subscriptionRepository.findByUserId(INTERNAL_USER_ID)).thenReturn(Optional.of(withoutPeriod));
+
+        assertThrows(PlanLimitExceededException.class,
+                () -> service.assertIsPro(INTERNAL_USER_ID, "Exportação PDF"));
+    }
+
+    @Test
     void cancelarAssinaturaMustPublishNotificationEventAfterSuccessfulOperation() {
         Subscription pro = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
                 .plano(PlanType.PRO)
                 .status(SubscriptionStatus.ACTIVE)
+                .fimPeriodo(LocalDate.now().plusDays(30))
                 .build();
 
         when(subscriptionRepository.findByUserId(INTERNAL_USER_ID)).thenReturn(Optional.of(pro));
@@ -117,6 +145,7 @@ class SubscriptionServiceIdentityTest {
                 .plano(PlanType.PRO)
                 .status(SubscriptionStatus.ACTIVE)
                 .stripeSubscriptionId("sub_target")
+                .fimPeriodo(LocalDate.now().plusDays(30))
                 .build();
         when(subscriptionRepository.findByStripeSubscriptionId("sub_target"))
                 .thenReturn(Optional.of(pro));
