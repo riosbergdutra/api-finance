@@ -4,6 +4,7 @@ import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.events.FinanceEvents;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.dto.SubscriptionResponse;
+import com.api.finance.subscription.application.port.in.SubscriptionAccountDeletionPort;
 import com.api.finance.subscription.exception.PlanLimitExceededException;
 import com.api.finance.subscription.model.PlanType;
 import com.api.finance.subscription.model.Subscription;
@@ -41,7 +42,7 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class SubscriptionService {
+public class SubscriptionService implements SubscriptionAccountDeletionPort {
 
     private static final int FREE_LIMITE_CONTAS = 3;
     private static final int FREE_LIMITE_TRANSACOES_MES = 100;
@@ -152,6 +153,26 @@ public class SubscriptionService {
     }
 
     /**
+     * Cancels recurring billing before a user's local data and identity are erased.
+     * Failure is propagated so account deletion does not silently leave paid billing active.
+     */
+    @Override
+    @Transactional
+    public void cancelarParaExclusao(UUID userId) {
+        subscriptionRepository.findByUserIdForUpdate(userId).ifPresent(sub -> {
+            String stripeSubscriptionId = sub.getStripeSubscriptionId();
+            if (stripeSubscriptionId != null && !stripeSubscriptionId.isBlank()
+                    && sub.getStatus() != SubscriptionStatus.CANCELLED
+                    && sub.getStatus() != SubscriptionStatus.EXPIRED) {
+                stripeService.cancelarSubscription(stripeSubscriptionId);
+            }
+            sub.setPlano(PlanType.FREE);
+            sub.setStatus(SubscriptionStatus.CANCELLED);
+            subscriptionRepository.save(sub);
+        });
+    }
+
+    /**
      * Cancela a subscription do usuário (revoga PRO).
      * Se houver uma subscription recorrente no Stripe, cancela lá também.
      */
@@ -209,6 +230,10 @@ public class SubscriptionService {
                 // An unknown provider subscription cannot be safely associated
                 // with a local user. Acknowledge it instead of retrying forever.
                 log.warn("[Stripe] Evento de subscription desconhecida sem metadata de usuário; nenhum entitlement alterado.");
+                return false;
+            }
+            if (userDirectory.findIdentityProviderId(metadataUserId).isEmpty()) {
+                log.warn("[Stripe] Subscription recebida para usuário local inexistente; nenhum registro órfão será criado.");
                 return false;
             }
             subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), metadataUserId);
