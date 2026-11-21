@@ -205,6 +205,28 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void eventoAtivoDoMesmoSegundoNaoPodeRessuscitarAssinaturaCancelada() {
+        Subscription canceled = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.FREE)
+                .status(SubscriptionStatus.CANCELLED)
+                .stripeSubscriptionId("sub_same_second")
+                .stripeLastEventCreated(500L)
+                .stripeLastEventId("evt_cancel")
+                .build();
+        when(subscriptionRepository.findByStripeSubscriptionIdForUpdate("sub_same_second"))
+                .thenReturn(Optional.of(canceled));
+
+        boolean applied = service.aplicarEventoStripeSubscription(
+                "sub_same_second", INTERNAL_USER_ID, "active",
+                LocalDate.now().plusDays(30), 500L, "evt_active_same_second");
+
+        assertFalse(applied);
+        assertEquals(SubscriptionStatus.CANCELLED, canceled.getStatus());
+        verify(subscriptionRepository, never()).save(any(Subscription.class));
+    }
+
+    @Test
     void eventoStripeNaoAtivoDeveRevogarProERegistrarTimestamp() {
         Subscription current = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
