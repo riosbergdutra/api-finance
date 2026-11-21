@@ -80,7 +80,6 @@ class AuthServiceAccountDeletionTest {
         verify(subscriptionDeletion).cancelarParaExclusao(internalUserId);
         verify(users).deleteByIdentityProviderId(keycloakId);
         verify(deletionProcessor).processOne(keycloakId);
-        verify(users).deleteByIdentityProviderId(keycloakId);
         verify(events, org.mockito.Mockito.times(3)).publishEvent(any(BffSessionRevokedEvent.class));
         verify(redis).delete("auth:user-sessions:" + keycloakId);
     }
