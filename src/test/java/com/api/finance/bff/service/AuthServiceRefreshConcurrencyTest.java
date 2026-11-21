@@ -54,10 +54,10 @@ class AuthServiceRefreshConcurrencyTest {
                 redis,
                 mock(OAuthLoginAttemptStore.class),
                 mock(UserDirectoryPort.class),
+                mock(SubscriptionAccountDeletionPort.class),
                 mock(JwtDecoder.class),
                 mock(AuthenticatedUserProvider.class),
                 mock(ApplicationEventPublisher.class),
-                mock(SubscriptionAccountDeletionPort.class),
                 mock(KeycloakAccountDeletionProcessor.class)
         );
         ReflectionTestUtils.setField(authService, "clientId", "test-client");
