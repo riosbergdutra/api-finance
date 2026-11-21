@@ -36,10 +36,10 @@ For an existing database, inspect `flyway_schema_history` and compare the actual
 1. Add an Audience mapper to the BFF access token so the configured `KEYCLOAK_API_AUDIENCE` value is present in the token's `aud` claim. The default documented audience is `finance-api`; set the environment variable to the exact configured value.
 2. Create a separate confidential client for administrative account deletion and enable its service account.
 3. Grant only the realm-management `manage-users` role to that service account. Do not reuse the browser-login client secret or grant full realm administration.
-4. Set `KEYCLOAK_ADMIN_BASE_URL` to the Keycloak origin (scheme and host, without `/realms/... `), and set `KEYCLOAK_REALM` to the realm name.
+4. Set `KEYCLOAK_ADMIN_BASE_URL` to the Keycloak origin (scheme and host, without `/realms/...`), and set `KEYCLOAK_REALM` to the realm name.
 5. Verify the service account can delete a disposable test user and that deleting the user terminates all Keycloak sessions before enabling the endpoint for real users.
 
-The backend fails JWT validation when the configured audience is absent. Account deletion fails closed if the admin service account is not configured or Keycloak cannot confirm deletion.
+The backend fails JWT validation when the configured audience is absent. Local account erasure is committed with a durable provider-deletion outbox. If the Admin API is unavailable or not configured, Keycloak deletion remains queued and retries automatically; do not consider provider-side erasure complete until the outbox is drained.
 
 ## BFF session lifecycle
 
