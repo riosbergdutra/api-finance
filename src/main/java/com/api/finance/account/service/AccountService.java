@@ -55,6 +55,9 @@ public class AccountService {
     public AccountResponse create(CreateAccountRequest request, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
+        // Serializa a verificação para impedir que requisições simultâneas excedam a cota.
+        subscriptionService.lockSubscriptionForQuotaCheck(userId);
+
         // Verifica limite do plano (FREE = 3 contas, PRO = ilimitado)
         long total = accountRepository.countByUserIdAndActiveTrue(userId);
         subscriptionService.assertPodeCriarConta(userId, total);
