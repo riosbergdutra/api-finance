@@ -3,8 +3,7 @@ package com.api.finance.bff.integration;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.connection.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -38,6 +37,9 @@ class RedisPubSubIntegrationTest {
     private static StringRedisTemplate publisher;
     private static RedisMessageListenerContainer listenerContainer;
 
+    private static CountDownLatch received;
+    private static AtomicReference<String> receivedMessage;
+
     @BeforeAll
     static void setUpRedisClients() throws Exception {
         publisherConnection = connectionFactory();
@@ -48,8 +50,8 @@ class RedisPubSubIntegrationTest {
         listenerContainer = new RedisMessageListenerContainer();
         listenerContainer.setConnectionFactory(subscriberConnection);
 
-        CountDownLatch received = new CountDownLatch(1);
-        AtomicReference<String> receivedMessage = new AtomicReference<>();
+        received = new CountDownLatch(1);
+        receivedMessage = new AtomicReference<>();
         listenerContainer.addMessageListener((MessageListener) (Message message, byte[] pattern) -> {
             receivedMessage.set(new String(message.getBody(), StandardCharsets.UTF_8));
             received.countDown();
@@ -58,13 +60,11 @@ class RedisPubSubIntegrationTest {
         listenerContainer.start();
 
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-        while (listenerContainer.getActiveConsumerCount() == 0 && System.nanoTime() < deadline) {
-            Thread.sleep(50);
+        while (received.getCount() > 0 && System.nanoTime() < deadline) {
+            publisher.convertAndSend(TOPIC, "subscription-revoked");
+            received.await(100, TimeUnit.MILLISECONDS);
         }
-        assertThat(listenerContainer.getActiveConsumerCount()).isPositive();
-
-        publisher.convertAndSend(TOPIC, "subscription-revoked");
-        assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(received.getCount()).isZero();
         assertThat(receivedMessage.get()).isEqualTo("subscription-revoked");
     }
 
@@ -82,12 +82,16 @@ class RedisPubSubIntegrationTest {
     }
 
     @Test
-    void publishesSessionRevocationAcrossIndependentRedisConnections() {
+    void publishesSessionRevocationAcrossIndependentRedisConnections() throws Exception {
+        received = new CountDownLatch(1);
+        receivedMessage.set(null);
         String sessionId = "123e4567-e89b-12d3-a456-426614174000";
 
         Long subscribers = publisher.convertAndSend(TOPIC, sessionId);
 
         assertThat(subscribers).isGreaterThanOrEqualTo(1L);
+        assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(receivedMessage.get()).isEqualTo(sessionId);
     }
 
     private static LettuceConnectionFactory connectionFactory() {
