@@ -175,7 +175,7 @@ public class SubscriptionService {
         }
 
         subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId).ifPresent(sub -> {
-            if (!sub.isPro()) {
+            if (sub.getPlano() != PlanType.PRO || sub.getStatus() != SubscriptionStatus.ACTIVE) {
                 return;
             }
 
