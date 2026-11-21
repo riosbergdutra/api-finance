@@ -73,6 +73,26 @@ class TransactionRepositoryPostgresTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    void stripeWebhookInboxDeduplicatesRepeatedEventIds() {
+        String eventId = "evt_" + UUID.randomUUID();
+
+        int firstDelivery = jdbcTemplate.update("""
+                INSERT INTO stripe_webhook_events (event_id, event_type)
+                VALUES (?, ?)
+                ON CONFLICT (event_id) DO NOTHING
+                """, eventId, "customer.subscription.updated");
+
+        int repeatedDelivery = jdbcTemplate.update("""
+                INSERT INTO stripe_webhook_events (event_id, event_type)
+                VALUES (?, ?)
+                ON CONFLICT (event_id) DO NOTHING
+                """, eventId, "customer.subscription.updated");
+
+        assertThat(firstDelivery).isEqualTo(1);
+        assertThat(repeatedDelivery).isZero();
+    }
+
     private void insertGeneralBudget(UUID id, UUID userId) {
         jdbcTemplate.update("""
                 INSERT INTO budgets (id, user_id, category_id, valor_limite, valor_gasto, mes, ano)
