@@ -167,6 +167,28 @@ public class SubscriptionService {
         eventPublisher.publishEvent(new FinanceEvents.AssinaturaCanceladaEvent(keycloakId, userId));
     }
 
+    /** Aplica o evento de cancelamento à assinatura Stripe exata, sem afetar outras contas. */
+    @Transactional
+    public void expirarPorStripeSubscriptionId(String stripeSubscriptionId) {
+        if (stripeSubscriptionId == null || stripeSubscriptionId.isBlank()) {
+            throw new IllegalArgumentException("Stripe subscription ID é obrigatório.");
+        }
+
+        subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId).ifPresent(sub -> {
+            if (!sub.isPro()) {
+                return;
+            }
+
+            sub.setStatus(SubscriptionStatus.EXPIRED);
+            sub.setPlano(PlanType.FREE);
+            subscriptionRepository.save(sub);
+
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(new FinanceEvents.AssinaturaExpiradaEvent(keycloakId, sub.getUserId()));
+            log.info("[Subscription] Assinatura Stripe expirada pelo webhook: userId={}", sub.getUserId());
+        });
+    }
+
     /**
      * Expira assinaturas PRO vencidas.
      * Chamado pelo SubscriptionExpirationScheduler diariamente.
