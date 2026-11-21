@@ -111,6 +111,31 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void stripeCancellationMustExpireOnlyTheMatchingSubscription() {
+        Subscription pro = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.PRO)
+                .status(SubscriptionStatus.ACTIVE)
+                .stripeSubscriptionId("sub_target")
+                .build();
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_target"))
+                .thenReturn(Optional.of(pro));
+        when(userDirectory.findIdentityProviderId(INTERNAL_USER_ID))
+                .thenReturn(Optional.of(KEYCLOAK_ID));
+
+        service.expirarPorStripeSubscriptionId("sub_target");
+
+        assertEquals(PlanType.FREE, pro.getPlano());
+        assertEquals(SubscriptionStatus.EXPIRED, pro.getStatus());
+        verify(subscriptionRepository).save(pro);
+        verify(eventPublisher).publishEvent(argThat((Object event) ->
+                event instanceof FinanceEvents.AssinaturaExpiradaEvent expired
+                        && KEYCLOAK_ID.toString().equals(expired.keycloakId())
+                        && INTERNAL_USER_ID.equals(expired.userId())
+        ));
+    }
+
+    @Test
     void ativarProMustResolveKeycloakIdFromInternalUserIdForDomainEvent() {
         Subscription free = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
