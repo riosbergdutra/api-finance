@@ -63,7 +63,7 @@ class ModularArchitectureTest {
     @Test
     void consumersMustUseUserApplicationPortInsteadOfUserRepositoryOrEntity() {
         ArchRule rule = noClasses()
-                .that().resideInAnyPackage("..bff..", "..notification..", "..subscription..")
+                .that().resideInAnyPackage("..bff..", "..notification..", "..subscription..", "..account..", "..category..", "..budget..", "..goal..", "..transaction..", "..dashboard..", "..export..", "..openfinance..")
                 .should().dependOnClassesThat()
                 .resideInAnyPackage("com.api.finance.user.repository..", "com.api.finance.user.model..")
                 .because("cross-module user access must go through the public UserDirectoryPort");
