@@ -61,7 +61,8 @@ class UserDirectoryAdapterDeletionTest {
         new UserDirectoryAdapter(users, jdbc).deleteByIdentityProviderId(keycloakId);
 
         verify(jdbc, org.mockito.Mockito.never()).update(
-                eq("DELETE FROM transactions WHERE user_id = ?"), eq(UUID.randomUUID()));
+                org.mockito.ArgumentMatchers.contains("DELETE FROM transactions"),
+                org.mockito.ArgumentMatchers.<Object[]>any());
         verify(users, org.mockito.Mockito.never()).delete(org.mockito.ArgumentMatchers.any(User.class));
     }
 }
