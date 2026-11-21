@@ -116,6 +116,22 @@ class BffSessionAuthenticationFilterTest {
     }
 
     @Test
+    void deveIgnorarCookieDeSessaoDuplicadoOuMalformado() throws ServletException, IOException {
+        MockHttpServletRequest request = request("/api/users/me");
+        request.setCookies(
+                new jakarta.servlet.http.Cookie("SESSION_ID", "not-a-uuid"),
+                new jakarta.servlet.http.Cookie("SESSION_ID", "another-value"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertNotNull(chain.getRequest());
+        assertTrue(SecurityContextHolder.getContext().getAuthentication() == null);
+        verify(authService, never()).autenticarSessao(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void deveContinuarSemCookieParaQueSecurityConfigDecidaAcesso() throws ServletException, IOException {
         MockHttpServletRequest request = request("/api/users/me");
         MockHttpServletResponse response = new MockHttpServletResponse();
