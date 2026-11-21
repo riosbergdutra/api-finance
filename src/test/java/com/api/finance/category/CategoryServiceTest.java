@@ -11,7 +11,7 @@ import com.api.finance.category.repository.MerchantRuleRepository;
 import com.api.finance.category.service.CategoryService;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.TestFixtures;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,7 +36,7 @@ class CategoryServiceTest {
 
     @Mock CategoryRepository categoryRepository;
     @Mock MerchantRuleRepository merchantRuleRepository;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
     @InjectMocks CategoryService categoryService;
 
     AuthenticatedUser caller;
@@ -50,7 +50,7 @@ class CategoryServiceTest {
     }
 
     private void stubUser() {
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listar ──────────────────────────────────────────────────────
