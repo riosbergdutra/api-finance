@@ -1,14 +1,17 @@
 package com.api.finance.user.infrastructure;
 
 import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.user.application.port.UserIdentity;
 import com.api.finance.user.model.User;
 import com.api.finance.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +22,14 @@ import java.util.UUID;
 public class UserDirectoryAdapter implements UserDirectoryPort {
 
     private final UserRepository userRepository;
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserIdentity> findPage(int page, int size) {
+        return userRepository.findAll(PageRequest.of(page, size)).getContent().stream()
+                .map(user -> new UserIdentity(user.getId(), user.getKeycloakId()))
+                .toList();
+    }
 
     @Override
     @Transactional(readOnly = true)
