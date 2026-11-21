@@ -258,7 +258,7 @@ public class TransactionService {
     public void deletar(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Transaction trx = transactionRepository.findByIdAndUserId(id, userId)
+        Transaction trx = transactionRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
 
         if (trx.isTransferDestinationApplied()
