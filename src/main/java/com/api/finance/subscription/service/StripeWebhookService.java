@@ -113,51 +113,37 @@ public class StripeWebhookService {
         try {
             com.stripe.model.Subscription stripeSub =
                     deserializar(event, com.stripe.model.Subscription.class);
-
             if (stripeSub == null) {
                 throw new IllegalStateException("Não foi possível desserializar Subscription em " + event.getType() + ".");
             }
 
-            log.info("[Stripe] Assinatura {}: id={} status={}", event.getType(), stripeSub.getId(), stripeSub.getStatus());
+            Long eventCreated = event.getCreated();
+            if (eventCreated == null) {
+                throw new IllegalStateException("Evento Stripe sem timestamp de criação.");
+            }
 
-            if (!"active".equals(stripeSub.getStatus())) {
-                log.info("[Stripe] Subscription não está ativa (status={}), ignorando", stripeSub.getStatus());
-                return;
+            Long periodEnd = null;
+            if ("active".equalsIgnoreCase(stripeSub.getStatus())) {
+                try {
+                    periodEnd = stripeSub.getItems().getData().get(0).getCurrentPeriodEnd();
+                } catch (Exception ignored) {
+                    // The service rejects an active subscription without a real provider period end.
+                }
+                if (periodEnd == null) {
+                    throw new IllegalStateException(
+                            "Stripe não informou currentPeriodEnd para a subscription " + stripeSub.getId() + ".");
+                }
             }
 
             Map<String, String> metadata = stripeSub.getMetadata();
             UUID userId = resolverUserId(metadata != null ? metadata.get("userId") : null);
+            LocalDate fim = periodEnd == null ? null
+                    : Instant.ofEpochSecond(periodEnd).atZone(ZoneId.of("UTC")).toLocalDate();
 
-            if (userId == null) {
-                log.warn("[Stripe] userId não encontrado no metadata da subscription={}", stripeSub.getId());
-                return;
-            }
-
-            // Pega o fim do período da primeira item da subscription
-            Long periodEnd = null;
-            try {
-                periodEnd = stripeSub.getItems()
-                        .getData().get(0)
-                        .getCurrentPeriodEnd();
-            } catch (Exception ex) {
-                log.warn("[Stripe] Não foi possível ler currentPeriodEnd da subscription={}: {}", stripeSub.getId(), ex.getMessage());
-            }
-
-            if (periodEnd == null) {
-                // Não conceder período PRO estimado quando o Stripe não informa
-                // a data real. O erro propaga para o controller e permite retry.
-                throw new IllegalStateException(
-                        "Stripe não informou currentPeriodEnd para a subscription " + stripeSub.getId() + ".");
-            }
-
-            LocalDate fim = Instant.ofEpochSecond(periodEnd)
-                    .atZone(java.time.ZoneOffset.UTC)
-                    .toLocalDate();
-
-            LocalDate inicio = LocalDate.now();
-            subscriptionService.ativarPro(userId, null, stripeSub.getId(), inicio, fim);
-            log.info("[Stripe] PRO ativado/renovado userId={} até={}", userId, fim);
-
+            subscriptionService.aplicarEventoStripeSubscription(
+                    stripeSub.getId(), userId, stripeSub.getStatus(), fim, eventCreated, event.getId());
+            log.info("[Stripe] Estado da subscription reconciliado: status={} eventId={}",
+                    stripeSub.getStatus(), event.getId());
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao processar " + event.getType() + ".", e);
         }
@@ -169,14 +155,19 @@ public class StripeWebhookService {
         try {
             com.stripe.model.Subscription stripeSub =
                     deserializar(event, com.stripe.model.Subscription.class);
-
             if (stripeSub == null) {
                 throw new IllegalStateException("Não foi possível desserializar Subscription em subscription.deleted.");
             }
+            Long eventCreated = event.getCreated();
+            if (eventCreated == null) {
+                throw new IllegalStateException("Evento Stripe sem timestamp de criação.");
+            }
 
-            log.info("[Stripe] Subscription cancelada/expirada: id={}", stripeSub.getId());
-            subscriptionService.expirarPorStripeSubscriptionId(stripeSub.getId());
-
+            Map<String, String> metadata = stripeSub.getMetadata();
+            UUID userId = resolverUserId(metadata != null ? metadata.get("userId") : null);
+            subscriptionService.aplicarEventoStripeSubscription(
+                    stripeSub.getId(), userId, "canceled", null, eventCreated, event.getId());
+            log.info("[Stripe] Cancelamento reconciliado: eventId={}", event.getId());
         } catch (Exception e) {
             throw new IllegalStateException("Falha ao processar customer.subscription.deleted.", e);
         }
