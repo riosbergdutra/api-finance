@@ -46,7 +46,6 @@ app:
   security:
     jwt:
       required-audience: ${KEYCLOAK_API_AUDIENCE}
-  keycloak:
     admin:
       base-url: ${KEYCLOAK_ADMIN_BASE_URL}
       realm: ${KEYCLOAK_REALM}
