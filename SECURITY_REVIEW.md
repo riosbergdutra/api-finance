@@ -11,20 +11,30 @@ This file tracks verified code-level risks that remain before a public productio
 - [x] Require production database, Keycloak, Redis, Stripe test-mode, callback, and CORS configuration through environment variables.
 - [x] Require TLS and credentials for production Redis.
 - [x] Keep Stripe in Test Mode and reject live API keys and live webhook events.
-- [x] Add isolated H2 configuration for the application-context test.
+- [x] Add isolated H2 configuration for application-context tests and PostgreSQL Testcontainers migration/query tests.
 - [x] Correct service unit-test fixtures and missing mocks without disabling Mockito strictness.
+- [x] Bind OAuth `state` and PKCE verifier to a one-time Redis login attempt; compare state in constant time, expire attempts after five minutes, and bind the opaque flow ID to an HttpOnly cookie.
+- [x] Process Stripe webhooks synchronously; persist event IDs in a PostgreSQL inbox in the same transaction as subscription changes so duplicate deliveries are ignored and failures can be retried.
+- [x] Apply Stripe subscription deletion to the exact local subscription matching the provider subscription ID.
+- [x] Exempt only the signature-verified Stripe webhook endpoint from browser CSRF protection; browser-authenticated write endpoints remain under CSRF.
+- [x] Configure explicit RestClient connect/read timeouts and a bounded HikariCP pool.
+- [x] Serialize concurrent balance changes on the same account with a PostgreSQL pessimistic row lock.
+- [x] Bound Excel/PDF exports by a configurable maximum row count and return HTTP 413 instead of loading an unbounded number of transactions.
+- [x] Add composite indexes for transaction date-range queries, goal deadlines, subscription expiration, active accounts, and monthly budgets.
+- [x] Enforce one general budget per user/month/year with a partial unique index; migration fails safely if legacy duplicates need manual reconciliation.
+- [x] Add Nginx WebSocket upgrade forwarding and apply rate limiting to root-level API paths as well as `/api/`.
 
 ## Must be resolved before public production launch
 
-- [ ] **OAuth2 login CSRF and PKCE:** the current manual authorization-code flow does not generate/validate `state` or use PKCE. Bind state and PKCE verifier to the initiating browser, validate them on callback, and coordinate the request contract with the frontend. Do not rely on the unused Java-serialized cookie repository as a substitute.
-- [ ] **Stripe webhook reliability:** processing is currently asynchronous and exceptions are logged/swallowed. The controller can acknowledge an event before durable processing succeeds. Add durable event receipt, unique event-ID idempotency, and retry-safe processing; return a retryable failure when processing cannot be completed.
-- [ ] **Stripe subscription lifecycle:** verify cancellation events update the exact subscription by Stripe subscription ID. Current deletion handling invokes the general expiration scheduler rather than targeting the event's subscription.
+- [ ] **Financial transfer semantics:** review and test `TRANSFERENCIA` end to end. The current transaction flow records a destination account but does not yet prove that both source and destination balances are updated/reversed correctly on create, update, and delete. Do not assume this feature is financially correct until its ledger behavior and legacy records are reconciled.
 - [ ] **Account deletion and privacy:** verify foreign-key cascades and permanently remove all user-owned data according to the retention policy. The current flow deletes the local user row and logs out only the supplied session; it does not invalidate every Redis session or delete/disable the Keycloak identity.
-- [ ] **Database migrations:** create and review a baseline Flyway migration before enabling Flyway. The production profile currently disables Flyway and uses Hibernate `validate`, so the schema must be provisioned separately before startup.
 - [ ] **JWT authorization:** review issuer, audience, authorized-party, role/scope, and token-expiry validation. Confirm every business endpoint is protected and that no endpoint accidentally trusts a client-supplied user ID.
-- [ ] **Redis session protection:** confirm managed Redis access controls, TLS, backups/retention, and operational invalidation of all sessions on password reset/account deletion. Refresh tokens are stored in Redis session records.
-- [ ] **Secrets and infrastructure:** rotate any credentials previously exposed during development. Never reuse the local credentials in `compose.yaml`; replace default Keycloak, PostgreSQL, and Grafana credentials and restrict monitoring endpoints before deployment.
-- [ ] **Operational readiness:** add controller/security integration tests, webhook signature/idempotency tests, backup-and-restore verification, rate limiting for authentication endpoints, and alerting for auth/webhook failures.
+- [ ] **Redis session protection:** confirm managed Redis access controls, backups/retention, and operational invalidation of all sessions on password reset/account deletion. Refresh tokens are stored in Redis session records. Redis Pub/Sub revocation is best-effort; a lost Pub/Sub message can leave a remote WebSocket connected until another validation occurs.
+- [ ] **Production schema rehearsal:** V1–V4 exist and Flyway is enabled in the production profile, but the existing production database (if any) must be inspected and migration rehearsal/backup-restore must be completed before deployment.
+- [ ] **Open Finance:** `OpenFinanceService` is intentionally a stub and does not connect to a real aggregator. Keep this feature unavailable in product claims until a provider integration, consent lifecycle, secure token storage, synchronization, and revocation are implemented and tested.
+- [ ] **Operational readiness:** verify rate limits with the actual ingress topology, add controller/security tests for all sensitive routes, test Stripe delivery with valid signatures and transient database failures, configure backup-and-restore drills, and add alerting for authentication/webhook/database failures.
+- [ ] **Deployment hardening:** `compose.yaml` and `nginx/nginx.conf` are local/example configurations. Provide a production image/deployment manifest, TLS ingress, non-default credentials, private database/cache/monitoring networks, and a reviewed secrets-management process.
+- [ ] **Secrets:** rotate any credentials previously exposed during development. Never reuse the local credentials in `compose.yaml`; replace default Keycloak, PostgreSQL, and Grafana credentials and restrict monitoring endpoints before deployment.
 
 ## Release gate
 
