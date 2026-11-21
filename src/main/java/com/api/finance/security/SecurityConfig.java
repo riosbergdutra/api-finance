@@ -38,6 +38,9 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String clientId;
 
+    @Value("${app.security.jwt.required-audience:}")
+    private String requiredAudience;
+
     @Value("${app.cookies.secure:true}")
     private boolean secureCookies;
 
@@ -120,10 +123,22 @@ public class SecurityConfig {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withIssuerLocation(issuerUri).build();
         OAuth2TokenValidator<Jwt> issuerAndTimeValidator = JwtValidators.createDefaultWithIssuer(issuerUri);
         OAuth2TokenValidator<Jwt> authorizedPartyValidator = new JwtClaimValidator<>("azp", clientId::equals);
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                issuerAndTimeValidator,
-                authorizedPartyValidator
-        ));
+        if (requiredAudience != null && !requiredAudience.isBlank()) {
+            OAuth2TokenValidator<Jwt> audienceValidator = jwt -> jwt.getAudience().contains(requiredAudience)
+                    ? OAuth2TokenValidatorResult.success()
+                    : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                            "invalid_token", "Required API audience is missing.", null));
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    issuerAndTimeValidator,
+                    authorizedPartyValidator,
+                    audienceValidator
+            ));
+        } else {
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    issuerAndTimeValidator,
+                    authorizedPartyValidator
+            ));
+        }
         return decoder;
     }
 }
