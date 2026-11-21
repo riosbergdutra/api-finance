@@ -130,6 +130,7 @@ public class AuthService {
             current.setAccessToken(response.accessToken());
             current.setRefreshToken(response.refreshToken());
             sessionRepository.save(current);
+            redis.expire(sessionIndexKey(current.getKeycloakId()), java.time.Duration.ofDays(30));
             return new AuthResponseDTO(sessionId);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
