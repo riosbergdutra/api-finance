@@ -330,7 +330,7 @@ class TransactionServiceTest {
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());
 
             given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
-            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.save(any())).willReturn(transaction);
 
@@ -401,7 +401,7 @@ class TransactionServiceTest {
 
             transactionService.deletar(TRANSACTION_ID, caller);
 
-            then(accountRepository).should(never()).findByIdAndUserId(any(), any());
+            then(accountRepository).should(never()).findByIdAndUserIdForUpdate(any(), any());
         }
     }
 }
