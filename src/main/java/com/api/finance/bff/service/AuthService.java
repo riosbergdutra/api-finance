@@ -10,8 +10,7 @@ import com.api.finance.bff.repository.AuthSessionRepository;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -49,7 +48,7 @@ public class AuthService {
     private final AuthSessionRepository sessionRepository;
     private final StringRedisTemplate redis;
     private final OAuthLoginAttemptStore loginAttemptStore;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
     private final JwtDecoder jwtDecoder;
     private final AuthenticatedUserProvider userprovider;
     private final ApplicationEventPublisher eventPublisher;
@@ -91,21 +90,7 @@ public class AuthService {
     }
 
     private void garantirExistenciaUsuario(String keycloakId, String email, String nome) {
-        UUID uuid = UUID.fromString(keycloakId);
-
-        if (userRepository.existsByKeycloakId(uuid)) {
-            return;
-        }
-
-        try {
-            User novo = new User();
-            novo.setKeycloakId(uuid);
-            novo.setEmail(email);
-            novo.setNome(nome);
-            userRepository.save(novo);
-        } catch (DataIntegrityViolationException e) {
-            log.info("Usuário {} criado simultaneamente por outra instância.", keycloakId);
-        }
+        userDirectory.registerIfAbsent(UUID.fromString(keycloakId), email, nome);
     }
 
     @CircuitBreaker(name = "keycloak", fallbackMethod = "refreshFallback")
@@ -203,7 +188,7 @@ public class AuthService {
         AuthenticatedUser user = userprovider.get(jwt);
         UUID keycloakId = user.id();
 
-        userRepository.deleteByKeycloakId(keycloakId);
+        userDirectory.deleteByIdentityProviderId(keycloakId);
 
         if (sessionId != null) {
             this.logout(sessionId);
