@@ -60,6 +60,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        // Stripe autentica webhooks pela assinatura criptográfica do payload.
+                        .ignoringRequestMatchers("/webhooks/stripe")
                 )
                 .cors(Customizer.withDefaults())
                 .logout(logout -> logout.disable())
