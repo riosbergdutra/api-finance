@@ -10,11 +10,13 @@ import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -35,6 +37,7 @@ public class DashboardService {
     private final NotificationRepository notificationRepository;
     private final GoalRepository goalRepository;
     private final UserDirectoryPort userDirectory;
+    private final Executor dashboardExecutor;
 
     public DashboardResponse getDashboard(AuthenticatedUser caller) {
         UUID userId = userDirectory.findInternalUserId(caller.id())
@@ -47,22 +50,22 @@ public class DashboardService {
         // ── Consultas em paralelo; contagens executadas no banco ───────────
         CompletableFuture<BigDecimal> saldoFuture =
                 CompletableFuture.supplyAsync(() ->
-                        accountRepository.sumBalanceByUserId(userId));
+                        accountRepository.sumBalanceByUserId(userId), dashboardExecutor);
 
         CompletableFuture<BigDecimal> receitasFuture =
                 CompletableFuture.supplyAsync(() ->
-                        transactionRepository.sumReceitasMes(userId, inicioMes, fimMes));
+                        transactionRepository.sumReceitasMes(userId, inicioMes, fimMes), dashboardExecutor);
 
         CompletableFuture<BigDecimal> despesasFuture =
                 CompletableFuture.supplyAsync(() ->
-                        transactionRepository.sumDespesasMes(userId, inicioMes, fimMes));
+                        transactionRepository.sumDespesasMes(userId, inicioMes, fimMes), dashboardExecutor);
 
         CompletableFuture<long[]> contadoresFuture =
                 CompletableFuture.supplyAsync(() -> new long[]{
                         notificationRepository.countByUserIdAndLidaFalse(userId),
                         accountRepository.countByUserIdAndActiveTrue(userId),
                         goalRepository.countByUserIdAndConcluidaFalse(userId)
-                });
+                }, dashboardExecutor);
 
         CompletableFuture.allOf(saldoFuture, receitasFuture, despesasFuture, contadoresFuture).join();
 
