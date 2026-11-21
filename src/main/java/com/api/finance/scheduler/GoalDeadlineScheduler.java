@@ -16,8 +16,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * FIX: substituído userRepository.findAll() por paginação com PageRequest,
- * igual ao padrão adotado no BudgetAlertScheduler.
+ * A identidade dos usuários é obtida em lotes pelo contrato público UserDirectoryPort,
+ * sem expor a entidade JPA User ao scheduler.
  *
  * CRON: todo dia às 8h (horário de Brasília)
  */
@@ -79,7 +79,7 @@ public class GoalDeadlineScheduler {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("[Scheduler] Erro ao verificar metas userId={}: {}", user.getId(), e.getMessage());
+                    log.error("[Scheduler] Erro ao verificar metas userId={}: {}", user.internalUserId(), e.getMessage());
                 }
             }
             pagina++;
