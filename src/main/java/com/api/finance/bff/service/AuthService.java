@@ -165,6 +165,11 @@ public class AuthService {
         }
     }
 
+    /** Checks the authoritative Redis session record without exposing token data. */
+    public boolean sessaoAtiva(String sessionId) {
+        return sessionRepository.existsById(sessionId);
+    }
+
     /**
      * Logout must always remove the local BFF session, even when Keycloak is
      * unavailable or the Resilience4j circuit breaker is open. Remote token
