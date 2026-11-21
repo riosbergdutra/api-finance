@@ -9,11 +9,14 @@ RUN chmod +x mvnw && ./mvnw --batch-mode --no-transfer-progress -DskipTests depe
 COPY src/ src/
 RUN ./mvnw --batch-mode --no-transfer-progress -DskipTests package
 
-# Minimal runtime stage: no Maven, source tree, or root user.
+# Minimal runtime stage: JRE only, non-root user.
 FROM eclipse-temurin:21-jre-jammy AS runtime
 WORKDIR /app
 
-RUN groupadd --system --gid 10001 finance \
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 finance \
     && useradd --system --uid 10001 --gid finance --home-dir /app --shell /usr/sbin/nologin finance
 
 COPY --from=build --chown=finance:finance /workspace/target/finance-0.0.1-SNAPSHOT.jar /app/finance.jar
@@ -23,5 +26,8 @@ ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:InitialRAMPercentage=20.0 -X
 USER 10001:10001
 EXPOSE 8080
 STOPSIGNAL SIGTERM
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
+    CMD curl --fail --silent http://127.0.0.1:8080/actuator/health/readiness || exit 1
 
 ENTRYPOINT ["java", "-jar", "/app/finance.jar"]
