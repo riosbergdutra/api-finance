@@ -65,6 +65,35 @@ class TransactionRepositoryPostgresTest {
     }
 
     @Test
+    void transferDestinationAppliedFlagIsPersistedByPostgresInsert() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceAccountId = UUID.randomUUID();
+        UUID destinationAccountId = UUID.randomUUID();
+        UUID transactionId = UUID.randomUUID();
+
+        int inserted = repository.insertIfFingerprintAbsent(
+                transactionId,
+                userId,
+                sourceAccountId,
+                destinationAccountId,
+                null,
+                "TRANSFERENCIA",
+                "CONFIRMADA",
+                new BigDecimal("75.00"),
+                "Transferência",
+                null,
+                LocalDate.of(2026, 11, 21),
+                "b".repeat(64),
+                true
+        );
+
+        assertThat(inserted).isEqualTo(1);
+        Transaction stored = repository.findByIdAndUserId(transactionId, userId).orElseThrow();
+        assertThat(stored.isTransferDestinationApplied()).isTrue();
+        assertThat(stored.getContaDestinoId()).isEqualTo(destinationAccountId);
+    }
+
+    @Test
     void generalBudgetAllowsOnlyOnePerUserAndPeriodWhenCategoryIsNull() {
         UUID userId = UUID.randomUUID();
         insertGeneralBudget(UUID.randomUUID(), userId);
