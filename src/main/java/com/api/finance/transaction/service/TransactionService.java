@@ -153,7 +153,7 @@ public class TransactionService {
         return TransactionResponse.de(saved);
     }
 
-        @Transactional
+    @Transactional
     public TransactionResponse atualizar(UUID id, UpdateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
@@ -238,7 +238,7 @@ public class TransactionService {
         return TransactionResponse.de(saved);
     }
 
-        @Transactional
+    @Transactional
     public void deletar(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
@@ -271,7 +271,7 @@ public class TransactionService {
         recalcularOrcamentoSeNecessario(userId, trx.getTipo(), trx.getStatus(), trx.getData());
     }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
      * FIX: Budget.valorGasto é um campo persistido, não calculado on-the-fly —
