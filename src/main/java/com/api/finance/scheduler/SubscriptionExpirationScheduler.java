@@ -34,6 +34,7 @@ public class SubscriptionExpirationScheduler {
     private final UserDirectoryPort userDirectory;
 
     @Scheduled(cron = "0 0 0 * * *", zone = "America/Sao_Paulo")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "subscriptionExpirationScheduler", lockAtMostFor = "PT4H", lockAtLeastFor = "PT30S")
     public void processarExpiracoes() {
         log.info("[Scheduler] Processando expirações de assinatura");
 
