@@ -255,11 +255,11 @@ public class SubscriptionService implements SubscriptionAccountDeletionPort {
                     eventId, stripeStatus);
             return false;
         }
-        // Stripe timestamps have one-second precision. Never let an active
-        // update from the same second resurrect a subscription already marked
-        // canceled by another event from that second.
+        // Stripe timestamps have one-second precision. If two conflicting
+        // states share the same second, fail closed: an active event must not
+        // overwrite a non-active state because delivery order is ambiguous.
         if (previousCreated != null && eventCreated == previousCreated
-                && sub.getStatus() == SubscriptionStatus.CANCELLED
+                && sub.getStatus() != SubscriptionStatus.ACTIVE
                 && "active".equalsIgnoreCase(stripeStatus)) {
             return false;
         }
