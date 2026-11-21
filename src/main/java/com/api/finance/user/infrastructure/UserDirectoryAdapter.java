@@ -100,6 +100,16 @@ public class UserDirectoryAdapter implements UserDirectoryPort {
             // sem FK/cascade. A exclusão precisa remover explicitamente os dados.
             jdbcTemplate.update("DELETE FROM transactions WHERE user_id = ?", userId);
             jdbcTemplate.update("DELETE FROM budgets WHERE user_id = ?", userId);
+            // Defensive cleanup for invalid cross-user references to categories
+            // owned by the deleted account; preserve other users' financial rows.
+            jdbcTemplate.update("""
+                    UPDATE transactions SET category_id = NULL
+                    WHERE category_id IN (SELECT id FROM categories WHERE user_id = ?)
+                    """, userId);
+            jdbcTemplate.update("""
+                    UPDATE budgets SET category_id = NULL
+                    WHERE category_id IN (SELECT id FROM categories WHERE user_id = ?)
+                    """, userId);
             jdbcTemplate.update("""
                     DELETE FROM merchant_rules
                     WHERE user_id = ?
