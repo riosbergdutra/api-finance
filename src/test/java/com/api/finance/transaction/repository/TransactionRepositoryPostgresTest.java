@@ -3,6 +3,8 @@ package com.api.finance.transaction.repository;
 import com.api.finance.transaction.model.Transaction;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -16,6 +18,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest(properties = {
         "spring.jpa.hibernate.ddl-auto=validate",
@@ -40,6 +43,9 @@ class TransactionRepositoryPostgresTest {
     @Autowired
     private TransactionRepository repository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void insertIfFingerprintAbsentUsesPostgresUniqueConstraintAtomically() {
         UUID userId = UUID.randomUUID();
@@ -56,6 +62,22 @@ class TransactionRepositoryPostgresTest {
         Transaction stored = repository.findByIdAndUserId(firstId, userId).orElseThrow();
         assertThat(stored.getHashDeduplicacao()).isEqualTo(fingerprint);
         assertThat(stored.getValor()).isEqualByComparingTo("42.50");
+    }
+
+    @Test
+    void generalBudgetAllowsOnlyOnePerUserAndPeriodWhenCategoryIsNull() {
+        UUID userId = UUID.randomUUID();
+        insertGeneralBudget(UUID.randomUUID(), userId);
+
+        assertThatThrownBy(() -> insertGeneralBudget(UUID.randomUUID(), userId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private void insertGeneralBudget(UUID id, UUID userId) {
+        jdbcTemplate.update("""
+                INSERT INTO budgets (id, user_id, category_id, valor_limite, valor_gasto, mes, ano)
+                VALUES (?, ?, NULL, 1000.00, 0.00, 11, 2026)
+                """, id, userId);
     }
 
     private int insert(UUID id, UUID userId, UUID accountId, String fingerprint) {
