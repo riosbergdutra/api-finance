@@ -101,7 +101,7 @@ class TransactionServiceTest {
     @Test
     @DisplayName("buscarPorId: lança TransactionNotFoundException quando não encontrada")
     void buscarPorIdLancaNotFound() {
-        given(transactionRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
+        given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> transactionService.buscarPorId(UUID.randomUUID(), caller))
                 .isInstanceOf(TransactionNotFoundException.class);
@@ -329,7 +329,7 @@ class TransactionServiceTest {
                     null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());
 
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
             given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.save(any())).willReturn(transaction);
@@ -357,7 +357,7 @@ class TransactionServiceTest {
             transaction.setContaDestinoId(DESTINATION_ACCOUNT_ID);
             transaction.setTransferDestinationApplied(true);
 
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID))
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID))
                     .willReturn(Optional.of(transaction));
             given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
                     .willReturn(Optional.of(source));
@@ -374,7 +374,7 @@ class TransactionServiceTest {
         @Test
         @DisplayName("deleta transação e reverte saldo da conta")
         void deletaEReverteSaldo() {
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
             given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
 
             transactionService.deletar(TRANSACTION_ID, caller);
@@ -387,7 +387,7 @@ class TransactionServiceTest {
         @Test
         @DisplayName("lança TransactionNotFoundException quando não encontrada")
         void lancaNotFound() {
-            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(transactionRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> transactionService.deletar(UUID.randomUUID(), caller))
                     .isInstanceOf(TransactionNotFoundException.class);
@@ -397,7 +397,7 @@ class TransactionServiceTest {
         @DisplayName("não tenta reverter saldo quando transação é PENDENTE")
         void naoReverteSaldoPendente() {
             transaction.setStatus(TransactionStatus.PENDENTE);
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
 
             transactionService.deletar(TRANSACTION_ID, caller);
 
