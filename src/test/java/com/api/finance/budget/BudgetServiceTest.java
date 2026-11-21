@@ -10,7 +10,7 @@ import com.api.finance.category.model.Category;
 import com.api.finance.category.repository.CategoryRepository;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,7 +38,7 @@ class BudgetServiceTest {
     @Mock BudgetRepository budgetRepository;
     @Mock CategoryRepository categoryRepository;
     @Mock TransactionRepository transactionRepository;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
     @InjectMocks BudgetService budgetService;
 
     AuthenticatedUser caller;
@@ -54,7 +54,7 @@ class BudgetServiceTest {
     }
 
     private void stubUser() {
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listar ──────────────────────────────────────────────────────
