@@ -10,7 +10,7 @@ import com.api.finance.category.repository.CategoryRepository;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,7 +29,7 @@ public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final CategoryRepository categoryRepository;
     private final TransactionRepository transactionRepository;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
 
     @Transactional(readOnly = true)
     public List<BudgetResponse> listar(int mes, int ano, AuthenticatedUser caller) {
@@ -133,7 +133,7 @@ public class BudgetService {
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }
