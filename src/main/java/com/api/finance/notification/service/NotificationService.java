@@ -5,7 +5,7 @@ import com.api.finance.notification.dto.NotificationResponse;
 import com.api.finance.notification.model.Notification;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.repository.NotificationRepository;
-import com.api.finance.notification.application.port.out.UserIdentityPort;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import com.api.finance.notification.application.port.out.NotificationPushPort;
 import com.api.finance.notification.application.port.out.NotificationPushMessage;
 import com.api.finance.shared.exception.ResourceNotFoundException;
@@ -38,7 +38,7 @@ import java.util.UUID;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final UserIdentityPort userIdentityPort;
+    private final UserDirectoryPort userDirectory;
     private final NotificationPushPort notificationPushPort;
 
     // ── Leitura ─────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ public class NotificationService {
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userIdentityPort.findInternalUserId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }
