@@ -68,6 +68,7 @@ public class AuthService {
     @Value("${app.auth.redirect-uri:http://localhost:8080/auth/callback}")
     private String redirectUri;
 
+    @CircuitBreaker(name = "keycloak", fallbackMethod = "loginFallback")
     public AuthResponseDTO login(String code, String state, String flowId) {
         String codeVerifier = loginAttemptStore.consumeVerifier(flowId, state);
         KeycloakTokenResponse response = buscarTokensNoKeycloak(
@@ -346,8 +347,8 @@ public class AuthService {
     ) {}
 
     @SuppressWarnings("unused")
-    private AuthResponseDTO loginFallback(String code, Throwable t) {
-        log.error("Circuit Breaker OPEN: Keycloak indisponível para login. {}", t.getMessage());
+    private AuthResponseDTO loginFallback(String code, String state, String flowId, Throwable t) {
+        log.warn("Circuit Breaker OPEN: Keycloak indisponível para login.");
         throw new AuthIntegrationException("O serviço de autenticação está temporariamente indisponível.");
     }
 
