@@ -51,7 +51,7 @@ The backend fails JWT validation when the configured audience is absent. Local a
 
 ## Billing safety
 
-Stripe is deliberately locked to Test Mode. The production profile hardcodes `stripe.mode=test`; the application rejects keys not beginning with `sk_test_` and rejects events marked as live. Recurring subscription webhook updates are serialized by a database row lock and older `event.created` values are ignored. Non-active provider states do not grant PRO. Do not enable live billing until provider-side event replay/reconciliation tests, pricing, cancellation, refund, and legal flows have been reviewed.
+Stripe is deliberately locked to Test Mode. The production profile hardcodes `stripe.mode=test`; the application rejects keys not beginning with `sk_test_` and rejects events marked as live. Recurring subscription webhook updates are serialized by a database row lock and older `event.created` values are ignored; ambiguous conflicting states within the same second fail closed rather than granting PRO. Non-active provider states do not grant PRO. Do not enable live billing until provider-side event replay/reconciliation tests, pricing, cancellation, refund, and legal flows have been reviewed.
 
 ## Optional capacity controls
 
