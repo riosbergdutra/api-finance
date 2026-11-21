@@ -40,7 +40,7 @@ class AuthServiceAccountDeletionTest {
         UserDirectoryPort users = mock(UserDirectoryPort.class);
         AuthenticatedUserProvider userProvider = mock(AuthenticatedUserProvider.class);
         var events = mock(org.springframework.context.ApplicationEventPublisher.class);
-        KeycloakAdminClient admin = mock(KeycloakAdminClient.class);
+        KeycloakAccountDeletionProcessor deletionProcessor = mock(KeycloakAccountDeletionProcessor.class);
         SubscriptionAccountDeletionPort subscriptionDeletion = mock(SubscriptionAccountDeletionPort.class);
         UUID internalUserId = UUID.randomUUID();
 
@@ -65,7 +65,7 @@ class AuthServiceAccountDeletionTest {
                 userProvider,
                 events,
                 subscriptionDeletion,
-                admin
+                deletionProcessor
         );
 
         Jwt jwt = Jwt.withTokenValue("opaque")
@@ -78,7 +78,8 @@ class AuthServiceAccountDeletionTest {
         verify(sessions).delete(second);
         verify(sessions).delete(legacy);
         verify(subscriptionDeletion).cancelarParaExclusao(internalUserId);
-        verify(admin).deleteUser(keycloakId);
+        verify(users).deleteByIdentityProviderId(keycloakId);
+        verify(deletionProcessor).processOne(keycloakId);
         verify(users).deleteByIdentityProviderId(keycloakId);
         verify(events, org.mockito.Mockito.times(3)).publishEvent(any(BffSessionRevokedEvent.class));
         verify(redis).delete("auth:user-sessions:" + keycloakId);
