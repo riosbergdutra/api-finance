@@ -232,6 +232,26 @@ class TransactionServiceTest {
         }
 
         @Test
+        @DisplayName("rejeita transferência entre moedas diferentes")
+        void rejeitaTransferenciaEntreMoedasDiferentes() {
+            Account destination = destinationAccount();
+            destination.setCurrency("USD");
+            CreateTransactionRequest req = new CreateTransactionRequest(
+                    ACCOUNT_ID, DESTINATION_ACCOUNT_ID, null, TransactionType.TRANSFERENCIA,
+                    TransactionStatus.CONFIRMADA, new BigDecimal("100.00"),
+                    "Transferência", null, LocalDate.now());
+
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+
+            assertThatThrownBy(() -> transactionService.criar(req, caller))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("mesma moeda");
+        }
+
+        @Test
         @DisplayName("rejeita transferência sem conta de destino")
         void rejeitaTransferenciaSemDestino() {
             CreateTransactionRequest req = new CreateTransactionRequest(
