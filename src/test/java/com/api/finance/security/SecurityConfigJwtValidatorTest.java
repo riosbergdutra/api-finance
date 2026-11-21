@@ -15,18 +15,21 @@ class SecurityConfigJwtValidatorTest {
 
         Jwt valid = Jwt.withTokenValue("opaque")
                 .header("alg", "RS256")
+                .subject("user-1")
                 .claim("azp", "finance-bff")
                 .build();
         Jwt wrongClient = Jwt.withTokenValue("opaque")
                 .header("alg", "RS256")
+                .subject("user-1")
                 .claim("azp", "another-client")
                 .build();
         Jwt missingClient = Jwt.withTokenValue("opaque")
                 .header("alg", "RS256")
+                .subject("user-1")
                 .build();
 
-        assertTrue(validator.validate(valid).hasErrors() == false);
-        assertFalse(validator.validate(wrongClient).hasErrors() == false);
-        assertFalse(validator.validate(missingClient).hasErrors() == false);
+        assertFalse(validator.validate(valid).hasErrors());
+        assertTrue(validator.validate(wrongClient).hasErrors());
+        assertTrue(validator.validate(missingClient).hasErrors());
     }
 }
