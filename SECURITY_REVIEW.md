@@ -1,49 +1,46 @@
 # Backend security and production-readiness review
 
-This file tracks verified code-level risks that remain before a public production launch. The production profile is intentionally conservative, but it does not by itself make the application production-ready.
+This review separates code changes from external configuration and operational checks. A passing CI build does not establish that the target Keycloak, Redis, Stripe, database, or deployment environment is correctly configured.
 
 ## Addressed in this hardening branch
 
-- [x] Restrict credentialed CORS to explicitly configured origins.
-- [x] Make the session cookie's `Secure` attribute configurable and default it to secure.
-- [x] Separate local development, test, and production configuration.
-- [x] Use Hibernate `validate` in the production profile; no automatic schema creation or update.
-- [x] Require production database, Keycloak, Redis, Stripe test-mode, callback, and CORS configuration through environment variables.
-- [x] Require TLS and credentials for production Redis.
-- [x] Keep Stripe in Test Mode and reject live API keys and live webhook events.
-- [x] Add isolated H2 configuration for application-context tests and PostgreSQL Testcontainers migration/query tests.
-- [x] Correct service unit-test fixtures and missing mocks without disabling Mockito strictness.
-- [x] Bind OAuth `state` and PKCE verifier to a one-time Redis login attempt; compare state in constant time, expire attempts after five minutes, and bind the opaque flow ID to an HttpOnly cookie.
-- [x] Process Stripe webhooks synchronously; persist event IDs in a PostgreSQL inbox in the same transaction as subscription changes so duplicate deliveries are ignored and failures can be retried.
-- [x] Apply Stripe subscription deletion to the exact local subscription matching the provider subscription ID.
-- [x] Exempt only the signature-verified Stripe webhook endpoint from browser CSRF protection; browser-authenticated write endpoints remain under CSRF.
-- [x] Configure explicit RestClient connect/read timeouts and a bounded HikariCP pool.
-- [x] Serialize concurrent balance changes on the same account with a PostgreSQL pessimistic row lock.
-- [x] Apply confirmed transfers to both source and destination accounts in one database transaction; lock both accounts in deterministic order, reject self/cross-currency/inactive destinations, and reverse both sides on update/delete. A V5 flag preserves the behavior of historical transfers during reversal.
-- [x] Enforce uniqueness of non-null Stripe subscription IDs in PostgreSQL so a deletion webhook cannot ambiguously target multiple local users (V6).
-- [x] Deny PRO entitlements when the subscription period has expired or has no end date, even if the daily expiration scheduler has not yet run.
-- [x] Serialize FREE-plan account and monthly-transaction quota checks with a per-user subscription row lock, preventing concurrent requests from exceeding the configured limits.
-- [x] Run parallel dashboard JDBC queries on a dedicated bounded executor instead of the shared ForkJoin common pool; saturation applies backpressure.
-- [x] Bound Excel/PDF exports by a configurable maximum row count and return HTTP 413 instead of loading an unbounded number of transactions.
-- [x] Add composite indexes for transaction date-range queries, goal deadlines, subscription expiration, active accounts, and monthly budgets.
-- [x] Enforce one general budget per user/month/year with a partial unique index; migration fails safely if legacy duplicates need manual reconciliation.
-- [x] Add Nginx WebSocket upgrade forwarding and apply rate limiting to root-level API paths as well as `/api/`.
-- [x] Validate the Keycloak `azp` (authorized-party) claim against the configured BFF client ID in addition to signature, issuer, and standard timestamp validation.
+- [x] Credentialed CORS is restricted to explicitly configured origins.
+- [x] Session cookies are HttpOnly, have configurable SameSite, and are Secure by default; production forces Secure.
+- [x] OAuth authorization state and PKCE verifier are one-time Redis values, compared in constant time, expire after five minutes, and are bound to an HttpOnly flow cookie.
+- [x] Browser access/refresh tokens are not returned to Angular; the browser holds only the opaque BFF session cookie.
+- [x] JWT signature, issuer, timestamps, and Keycloak `azp` are validated.
+- [x] Production requires an explicit API audience and the JWT decoder rejects tokens without that `aud` value.
+- [x] Refresh operations use a Redis distributed lock, re-read the rotated refresh token, and release the lock with compare-owner Lua.
+- [x] Logout removes the local Redis session before best-effort Keycloak token revocation.
+- [x] Account deletion revokes all indexed BFF sessions, closes their WebSockets, deletes the Keycloak identity through a separate service-account client, and transactionally removes user-owned rows from transactions, budgets, merchant rules, categories, goals, notifications, subscriptions, accounts, and users.
+- [x] Account deletion includes a one-time Redis session scan to include sessions created before the per-user index was introduced.
+- [x] WebSocket revocation is broadcast through Redis Pub/Sub and periodically revalidated against Redis; repeated Redis failures close local sockets (fail-closed).
+- [x] Stripe webhook signatures are verified before processing; live-mode events are rejected.
+- [x] Stripe event IDs are persisted in a PostgreSQL inbox in the same transaction as subscription changes, so duplicates are ignored and failed processing can be retried.
+- [x] Recurring subscription updates use pessimistic row locking and persist the latest provider event timestamp/ID (V7); older events are ignored.
+- [x] Non-active recurring Stripe states do not grant PRO; a cancellation event cannot be undone by an older event.
+- [x] Stripe subscription IDs are unique locally (V6); deletion targets the exact matching subscription.
+- [x] Production uses Flyway and Hibernate validate; database migrations are versioned V1–V7.
+- [x] Bounded HikariCP pool and explicit HTTP connect/read timeouts are configured.
+- [x] Financial transfers update both accounts atomically with deterministic locking; historical reversal behavior is tracked by V5.
+- [x] FREE-plan quota checks are serialized by a per-user subscription row lock.
+- [x] Dashboard queries use a dedicated bounded executor; exports have a configurable maximum row count.
+- [x] ArchUnit tests enforce key modular-monolith boundaries.
 
-## Must be resolved before public production launch
+## External configuration and release checks still required
 
-- [ ] **JWT audience and authorization:** `azp` is now checked, but the API audience has not been configured or verified against a real Keycloak access token. Confirm the intended API audience and add an audience validator. Also review role/scope requirements per endpoint; authentication alone is not authorization.
-- [ ] **Account deletion and privacy:** verify foreign-key cascades and permanently remove all user-owned data according to the retention policy. The current flow deletes the local user row and logs out only the supplied session; it does not invalidate every Redis session or delete/disable the Keycloak identity. Implement this only after configuring and testing a least-privilege Keycloak Admin API service account and a reliable Redis per-user session index.
-- [ ] **Stripe webhook ordering:** event IDs are deduplicated, but events for the same Stripe subscription are not ordered by `event.created` or reconciled against the provider's current state. A delayed older `customer.subscription.updated` could potentially reactivate a subscription after a newer deletion/cancellation event. Add durable per-subscription ordering/state reconciliation and tests before live billing.
-- [ ] **Subscription data reconciliation:** V6 fails safely if a Stripe subscription ID is duplicated in legacy rows. Inspect and reconcile those records before deployment if the migration reports duplicates.
-- [ ] **Historical transfer reconciliation:** V5 deliberately marks old transfers as not having credited their destination, because that is what the previous code did. Review existing transfer records and account balances before any backfill; do not automatically credit historical destinations without reconciling the ledger and confirming the intended accounting policy.
-- [ ] **Redis session protection:** confirm managed Redis access controls, backups/retention, and operational invalidation of all sessions on password reset/account deletion. Refresh tokens are stored in Redis session records. Redis Pub/Sub revocation is best-effort; a lost Pub/Sub message can leave a remote WebSocket connected until another validation occurs.
-- [ ] **Production schema rehearsal:** V1–V6 exist and Flyway is enabled in the production profile, but the existing production database (if any) must be inspected and migration rehearsal/backup-restore must be completed before deployment.
-- [ ] **Open Finance:** `OpenFinanceService` is intentionally a stub and does not connect to a real aggregator. Keep this feature unavailable in product claims until a provider integration, consent lifecycle, secure token storage, synchronization, and revocation are implemented and tested.
-- [ ] **Operational readiness:** verify rate limits with the actual ingress topology, add controller/security tests for all sensitive routes, test Stripe delivery with valid signatures and transient database failures, configure backup-and-restore drills, and add alerting for authentication/webhook/database failures.
-- [ ] **Deployment hardening:** `compose.yaml` and `nginx/nginx.conf` are local/example configurations. Provide a production image/deployment manifest, TLS ingress, non-default credentials, private database/cache/monitoring networks, and a reviewed secrets-management process.
-- [ ] **Secrets:** rotate any credentials previously exposed during development. Never reuse the local credentials in `compose.yaml`; replace default Keycloak, PostgreSQL, and Grafana credentials and restrict monitoring endpoints before deployment.
+- [ ] **Keycloak audience mapper:** configure an Audience mapper on the actual BFF access token so its `aud` contains the exact `KEYCLOAK_API_AUDIENCE`. Production now requires this variable; the default documented value is `finance-api`, but the realm must be configured to issue it.
+- [ ] **Keycloak admin service account:** create the separate confidential service-account client and grant only `realm-management/manage-users`. Configure its four environment variables and test deletion of a disposable identity. This cannot be verified from repository code alone.
+- [ ] **End-to-end BFF validation:** run login, OAuth callback, CSRF-protected writes, refresh after access-token expiry, logout, multi-session account deletion, and WebSocket revocation against the real target Keycloak and Redis. Do not treat unit tests as proof of this deployment integration.
+- [ ] **Stripe ordering rehearsal:** replay duplicate, delayed, out-of-order, same-second update/cancel, and provider retry scenarios against Stripe Test Mode. V7 orders events using Stripe's second-resolution `event.created`; if the provider emits multiple conflicting state transitions within the same second, verify the resulting state in the target test account before any live billing.
+- [ ] **Migration rehearsal:** apply V1–V7 to a disposable PostgreSQL copy containing representative existing data; verify V5 transfer history, V6 duplicate detection, V7 compatibility, and backup/restore.
+- [ ] **Historical transfer reconciliation:** V5 preserves the previous behavior for historical destination balances. Review actual ledger records before any backfill; never credit historical destination accounts without reconciliation.
+- [ ] **Redis operations:** configure managed Redis ACLs, TLS, persistence/backup, memory limits, eviction policy, alerting, and recovery drills. Refresh tokens remain in Redis and Redis is security-critical.
+- [ ] **Scheduler scale-out:** every application replica currently runs its own scheduled jobs. Before running multiple production replicas, add a distributed scheduler lock or persistent scheduler and test failover.
+- [ ] **Open Finance:** the current service is a stub, not a real aggregator integration. Keep it unavailable in product claims until consent, provider integration, secure token storage, synchronization, and revocation exist.
+- [ ] **Deployment hardening:** provide a production image and deployment manifest, TLS ingress, private database/cache/monitoring networks, non-default credentials, trusted proxy configuration, backup/restore drills, alerting, and incident runbooks. The checked-in Compose and Nginx files are local/example configurations.
+- [ ] **Secrets:** rotate credentials previously exposed during development. Never reuse local Compose defaults in production.
 
 ## Release gate
 
-Do not deploy publicly or enable live Stripe billing until the unchecked items above have been reviewed, tested, and explicitly approved. Billing must remain in Stripe Test Mode for the current demonstrative product.
+Do not deploy publicly or enable live Stripe billing until the external configuration and release checks above are completed and verified. The repository changes are not a substitute for environment-level security testing. Stripe must remain in Test Mode.
