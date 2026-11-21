@@ -13,7 +13,7 @@ import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.TestFixtures;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,7 +38,7 @@ import static org.mockito.BDDMockito.*;
 class AccountServiceTest {
 
     @Mock AccountRepository accountRepository;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
     @Mock SubscriptionService subscriptionService;
     @InjectMocks AccountService accountService;
 
@@ -49,7 +49,7 @@ class AccountServiceTest {
     void setUp() {
         caller = caller();
         account = account();
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listActiveAccounts ───────────────────────────────────────────
