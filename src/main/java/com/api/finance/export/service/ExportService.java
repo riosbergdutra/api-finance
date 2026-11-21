@@ -23,6 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,12 +44,16 @@ public class ExportService {
     private final SubscriptionService subscriptionService;
     private final UserDirectoryPort userDirectory;
 
+    @Value("${app.export.max-records:10000}")
+    private int maxExportRecords = 10000;
+
     private static final DateTimeFormatter BR_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     // ── Excel ─────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public byte[] gerarExcel(LocalDate de, LocalDate ate, AuthenticatedUser caller) {
+        validarPeriodo(de, ate);
         UUID userId = resolveUserId(caller);
         subscriptionService.assertIsPro(userId, "Exportação Excel");
 
@@ -104,6 +110,7 @@ public class ExportService {
 
     @Transactional(readOnly = true)
     public byte[] gerarPdf(LocalDate de, LocalDate ate, AuthenticatedUser caller) {
+        validarPeriodo(de, ate);
         UUID userId = resolveUserId(caller);
         subscriptionService.assertIsPro(userId, "Exportação PDF");
 
@@ -186,8 +193,25 @@ public class ExportService {
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private List<Transaction> buscarTransacoes(UUID userId, LocalDate de, LocalDate ate) {
-        return transactionRepository.findByUserIdAndPeriodo(
-                userId, de, ate, PageRequest.of(0, Integer.MAX_VALUE)).getContent();
+        if (maxExportRecords < 1 || maxExportRecords == Integer.MAX_VALUE) {
+            throw new IllegalStateException("app.export.max-records deve estar entre 1 e 2147483646.");
+        }
+
+        Page<Transaction> page = transactionRepository.findByUserIdAndPeriodo(
+                userId, de, ate, PageRequest.of(0, maxExportRecords + 1));
+
+        if (page.getTotalElements() > maxExportRecords) {
+            throw new ExportLimitExceededException(
+                    "A exportação excede o limite de " + maxExportRecords +
+                            " transações. Reduza o período e tente novamente.");
+        }
+        return page.getContent();
+    }
+
+    private void validarPeriodo(LocalDate de, LocalDate ate) {
+        if (de == null || ate == null || de.isAfter(ate)) {
+            throw new IllegalArgumentException("Informe um período válido: a data inicial deve ser anterior ou igual à final.");
+        }
     }
 
     private BigDecimal somarPorTipo(List<Transaction> transacoes, com.api.finance.transaction.model.TransactionType tipo) {
