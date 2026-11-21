@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.redis.core.RedisHash;
+import org.springframework.data.redis.core.index.Indexed;
 
 import java.io.Serializable;
 
@@ -25,6 +26,7 @@ public class AuthSession implements Serializable {
     @Column(nullable = false, unique = true)
     private String sessionId;
 
+    @Indexed
     @Column(nullable = false)
     private String keycloakId;
 
