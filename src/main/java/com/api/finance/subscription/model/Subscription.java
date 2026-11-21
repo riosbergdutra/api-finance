@@ -83,7 +83,10 @@ public class Subscription {
     // ─── Métodos utilitários ────────────────────────────────────────────────
 
     public boolean isPro() {
-        return PlanType.PRO.equals(plano) && SubscriptionStatus.ACTIVE.equals(status);
+        return PlanType.PRO.equals(plano)
+                && SubscriptionStatus.ACTIVE.equals(status)
+                && fimPeriodo != null
+                && !fimPeriodo.isBefore(LocalDate.now());
     }
 
     public boolean isExpired() {
