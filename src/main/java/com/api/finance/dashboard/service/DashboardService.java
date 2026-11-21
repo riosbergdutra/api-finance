@@ -10,13 +10,12 @@ import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
-import java.util.concurrent.Executor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -37,7 +36,7 @@ public class DashboardService {
     private final NotificationRepository notificationRepository;
     private final GoalRepository goalRepository;
     private final UserDirectoryPort userDirectory;
-    private final Executor dashboardExecutor;
+    private final ThreadPoolTaskExecutor dashboardExecutor;
 
     public DashboardResponse getDashboard(AuthenticatedUser caller) {
         UUID userId = userDirectory.findInternalUserId(caller.id())
