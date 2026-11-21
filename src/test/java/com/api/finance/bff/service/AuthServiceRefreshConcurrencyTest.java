@@ -5,7 +5,7 @@ import com.api.finance.bff.model.AuthSession;
 import com.api.finance.bff.repository.AuthSessionRepository;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUserProvider;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -52,7 +52,7 @@ class AuthServiceRefreshConcurrencyTest {
                 sessionRepository,
                 redis,
                 mock(OAuthLoginAttemptStore.class),
-                mock(UserRepository.class),
+                mock(UserDirectoryPort.class),
                 mock(JwtDecoder.class),
                 mock(AuthenticatedUserProvider.class),
                 mock(ApplicationEventPublisher.class)
