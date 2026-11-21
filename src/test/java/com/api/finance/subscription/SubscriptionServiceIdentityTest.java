@@ -87,7 +87,7 @@ class SubscriptionServiceIdentityTest {
         service.cancelarSubscricao(INTERNAL_USER_ID);
 
         verify(subscriptionRepository).save(pro);
-        verify(eventPublisher).publishEvent(argThat(event ->
+        verify(eventPublisher).publishEvent(argThat((Object event) ->
                 event instanceof FinanceEvents.AssinaturaCanceladaEvent canceled
                         && KEYCLOAK_ID.toString().equals(canceled.keycloakId())
                         && INTERNAL_USER_ID.equals(canceled.userId())
