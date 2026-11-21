@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,7 @@ import java.util.UUID;
 public class UserDirectoryAdapter implements UserDirectoryPort {
 
     private final UserRepository userRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional(readOnly = true)
@@ -71,6 +73,29 @@ public class UserDirectoryAdapter implements UserDirectoryPort {
     @Override
     @Transactional
     public void deleteByIdentityProviderId(UUID identityProviderUserId) {
-        userRepository.deleteByKeycloakId(identityProviderUserId);
+        userRepository.findByKeycloakId(identityProviderUserId).ifPresent(user -> {
+            UUID userId = user.getId();
+
+            // user_id é mantido como UUID escalar em várias tabelas legadas,
+            // sem FK/cascade. A exclusão precisa remover explicitamente os dados.
+            jdbcTemplate.update("DELETE FROM transactions WHERE user_id = ?", userId);
+            jdbcTemplate.update("DELETE FROM budgets WHERE user_id = ?", userId);
+            jdbcTemplate.update("""
+                    DELETE FROM merchant_rules
+                    WHERE user_id = ?
+                       OR category_id IN (SELECT id FROM categories WHERE user_id = ?)
+                    """, userId, userId);
+            jdbcTemplate.update("""
+                    UPDATE categories SET parent_id = NULL
+                    WHERE parent_id IN (SELECT id FROM categories WHERE user_id = ?)
+                    """, userId);
+            jdbcTemplate.update("DELETE FROM categories WHERE user_id = ?", userId);
+            jdbcTemplate.update("DELETE FROM goals WHERE user_id = ?", userId);
+            jdbcTemplate.update("DELETE FROM notifications WHERE user_id = ?", userId);
+            jdbcTemplate.update("DELETE FROM subscription WHERE user_id = ?", userId);
+            jdbcTemplate.update("DELETE FROM accounts WHERE user_id = ?", userId);
+
+            userRepository.delete(user);
+        });
     }
 }
