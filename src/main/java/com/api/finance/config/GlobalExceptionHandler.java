@@ -2,6 +2,7 @@ package com.api.finance.config;
 
 import com.api.finance.account.exception.AccountNotFoundException;
 import com.api.finance.account.exception.DuplicateAccountNameException;
+import com.api.finance.export.exception.ExportLimitExceededException;
 import com.api.finance.bff.dto.ErrorResponseDTO;
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
@@ -37,6 +38,11 @@ public class GlobalExceptionHandler {
                 .map(e -> e.getField() + ": " + e.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         return buildResponse(message, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(ExportLimitExceededException.class)
+    public ResponseEntity<ErrorResponseDTO> handleExportLimit(ExportLimitExceededException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.PAYLOAD_TOO_LARGE);
     }
 
     @ExceptionHandler(PlanLimitExceededException.class)
