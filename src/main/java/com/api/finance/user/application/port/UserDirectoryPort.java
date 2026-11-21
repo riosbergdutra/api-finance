@@ -11,6 +11,8 @@ public interface UserDirectoryPort {
 
     Optional<UUID> findInternalUserId(UUID identityProviderUserId);
 
+    Optional<UUID> findIdentityProviderId(UUID internalUserId);
+
     boolean existsByIdentityProviderId(UUID identityProviderUserId);
 
     void registerIfAbsent(UUID identityProviderUserId, String email, String name);
