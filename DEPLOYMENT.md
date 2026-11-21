@@ -16,6 +16,7 @@ The production profile uses Hibernate `validate` and enables Flyway. Migrations 
 - `V6`: enforces one local owner per non-null Stripe subscription ID; stops if legacy duplicates require reconciliation.
 - `V7`: stores the latest applied Stripe subscription event timestamp and ID to prevent older webhook deliveries from overwriting newer subscription state.
 - `V8`: adds a durable Keycloak account-deletion outbox and hashed identity tombstones to prevent erased users from being silently recreated.
+- `V9`: adds the PostgreSQL ShedLock table so scheduled jobs and the account-deletion outbox worker do not run concurrently on multiple replicas.
 
 For an existing database, inspect `flyway_schema_history` and compare the actual schema before deployment. Take and verify a backup before applying migrations. Do not baseline or mark migrations as applied without reviewing real data.
 
@@ -57,6 +58,7 @@ Stripe is deliberately locked to Test Mode. The production profile hardcodes `st
 - `DB_POOL_MAX_SIZE` (default 10 connections per application instance)
 - `DB_POOL_MIN_IDLE` (default 2)
 - `SCHEDULER_POOL_SIZE` (default 3)
+- `APP_ACCOUNT_DELETION_OUTBOX_POLL_INTERVAL` (default 30,000 ms)
 - `EXPORT_MAX_RECORDS` (default 10,000 records per export)
 
 Choose pool sizes based on PostgreSQL's total connection budget across all instances and other clients.
