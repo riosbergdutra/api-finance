@@ -76,7 +76,7 @@ public class TransactionService {
         subscriptionService.assertPodeCriarTransacao(userId, transacoesNoMes);
 
         // Garante ownership da conta
-        Account account = accountRepository.findByIdAndUserId(req.accountId(), userId)
+        Account account = accountRepository.findByIdAndUserIdForUpdate(req.accountId(), userId)
                 .orElseThrow(() -> new AccountNotFoundException("Conta não encontrada: " + req.accountId()));
 
         // Impressão digital de domínio: SHA-256 determinístico e sem fallback aleatório.
@@ -155,7 +155,7 @@ public class TransactionService {
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
 
         // Reverte saldo anterior se estava confirmada
-        Account account = accountRepository.findByIdAndUserId(trx.getAccountId(), userId)
+        Account account = accountRepository.findByIdAndUserIdForUpdate(trx.getAccountId(), userId)
                 .orElseThrow(() -> new AccountNotFoundException("Conta não encontrada"));
 
         if (trx.getStatus() == TransactionStatus.CONFIRMADA) {
@@ -217,7 +217,7 @@ public class TransactionService {
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
 
         if (trx.getStatus() == TransactionStatus.CONFIRMADA) {
-            accountRepository.findByIdAndUserId(trx.getAccountId(), userId).ifPresent(acc -> {
+            accountRepository.findByIdAndUserIdForUpdate(trx.getAccountId(), userId).ifPresent(acc -> {
                 reverterSaldo(acc, trx.getTipo(), trx.getValor());
                 accountRepository.save(acc);
             });
