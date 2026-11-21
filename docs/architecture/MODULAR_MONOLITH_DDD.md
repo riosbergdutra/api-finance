@@ -74,12 +74,12 @@ A estrutura é uma direção, não uma exigência de criar pastas vazias. MVC co
 
 ### Acoplamentos encontrados nos arquivos inspecionados
 
-- `TransactionService` injeta repositories de transaction, account, category e user; também depende de CategoryService, SubscriptionService e BudgetService. Importa entidades Account, Category e User.
-- `BudgetService` injeta CategoryRepository, TransactionRepository e UserRepository.
-- `DashboardService` consulta diretamente AccountRepository, TransactionRepository, NotificationRepository, GoalRepository e UserRepository.
-- `AccountService` depende de UserRepository e SubscriptionService.
-- `CategoryService` depende de UserRepository e de seus repositories locais.
-- `GoalService` depende de UserRepository e usa User para publicar eventos.
+- `TransactionService` injeta repositories de transaction, account e category; também depende de CategoryService, SubscriptionService e BudgetService. O acesso ao UserRepository e à entidade User foi removido por `UserDirectoryPort` e pelo uso do identificador autenticado do Keycloak.
+- `BudgetService` injeta CategoryRepository e TransactionRepository; a resolução do usuário já usa `UserDirectoryPort`.
+- `DashboardService` consulta diretamente AccountRepository, TransactionRepository, NotificationRepository e GoalRepository; a identidade do usuário já usa `UserDirectoryPort`.
+- `AccountService` depende de SubscriptionService; a identidade do usuário já usa `UserDirectoryPort`.
+- `CategoryService` depende apenas dos repositories locais e de `UserDirectoryPort` para resolução da identidade.
+- `GoalService` usa `UserDirectoryPort` para resolver o ID interno e o identificador autenticado para publicar eventos; não importa mais User/JPA.
 - `SubscriptionService` depende de UserRepository, NotificationService e StripeService.
 - `bff.AuthService` depende diretamente de UserRepository e User para provisionamento e exclusão de conta.
 - `Transaction` mantém associação JPA direta com `category.model.Category`, cruzando a fronteira de persistência entre módulos.
