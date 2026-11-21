@@ -170,17 +170,23 @@ public class AuthService {
      * revocation is best-effort; deleting the local session is mandatory.
      */
     public void logout(String sessionId) {
-        sessionRepository.findById(sessionId).ifPresent(session -> {
-            try {
-                revogarNoKeycloak(session.getRefreshToken());
-            } catch (Exception e) {
-                // Never log the opaque session id or any OAuth credential.
-                log.warn("Falha ao revogar token no Keycloak durante logout; sessão local será invalidada.");
-            } finally {
-                sessionRepository.delete(session);
-                eventPublisher.publishEvent(new BffSessionRevokedEvent(sessionId));
-            }
-        });
+        AuthSession session = sessionRepository.findById(sessionId).orElse(null);
+        if (session == null) {
+            return;
+        }
+
+        // Revoke the local BFF session before making a network call. A slow or
+        // unavailable Keycloak must never keep the browser session usable.
+        sessionRepository.delete(session);
+        eventPublisher.publishEvent(new BffSessionRevokedEvent(sessionId));
+
+        try {
+            revogarNoKeycloak(session.getRefreshToken());
+        } catch (Exception e) {
+            // Local revocation is authoritative; remote revocation is best-effort.
+            // Never log the opaque session id or any OAuth credential.
+            log.warn("Falha ao revogar token no Keycloak durante logout; sessão BFF já foi invalidada.");
+        }
     }
 
     @Transactional

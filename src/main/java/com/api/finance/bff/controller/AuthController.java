@@ -77,11 +77,18 @@ public class AuthController {
     public ResponseEntity<Void> logout(
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-        if (sessionId != null) {
-            authService.logout(sessionId);
+        try {
+            if (sessionId != null) {
+                authService.logout(sessionId);
+            }
+            limparSessionCookie(response);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException unavailable) {
+            // Remove the browser's copy even if Redis is unavailable. The 503
+            // makes clear that server-side revocation could not be confirmed.
+            limparSessionCookie(response);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
-        limparSessionCookie(response);
-        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/me")

@@ -5,11 +5,13 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.embedded.tomcat.TomcatProtocolHandlerCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.concurrent.Executors;
 
 @SpringBootApplication
 @EnableAsync
+@EnableScheduling
 public class FinanceApplication {
 
 	public static void main(String[] args) {
