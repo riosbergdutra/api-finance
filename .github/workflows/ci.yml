@@ -30,3 +30,5 @@ jobs:
         run: chmod +x mvnw
       - name: Run tests and verification
         run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Build production container image
+        run: docker build --pull --tag financeflow-backend:${{ github.sha }} .
