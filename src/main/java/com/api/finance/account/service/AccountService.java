@@ -10,7 +10,7 @@ import com.api.finance.account.repository.AccountRepository;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +26,7 @@ import java.util.UUID;
 public class AccountService {
 
     private final AccountRepository       accountRepository;
-    private final UserRepository          userRepository;
+    private final UserDirectoryPort       userDirectory;
     private final SubscriptionService     subscriptionService;
 
     // ── READ ──────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ public class AccountService {
     // ── HELPERS ───────────────────────────────────────────────────────────
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }
