@@ -60,6 +60,7 @@ class AuthServiceAccountDeletionTest {
                 mock(org.springframework.security.oauth2.jwt.JwtDecoder.class),
                 userProvider,
                 events,
+                mock(SubscriptionAccountDeletionPort.class),
                 admin
         );
 
