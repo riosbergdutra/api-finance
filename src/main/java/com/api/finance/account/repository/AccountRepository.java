@@ -2,6 +2,8 @@ package com.api.finance.account.repository;
 
 import com.api.finance.account.model.Account;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -38,6 +40,17 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      * @param userId UUID interno do usuário (extraído do JWT — nunca do body)
      */
     Optional<Account> findByIdAndUserId(UUID id, UUID userId);
+
+    /**
+     * Bloqueia a linha da conta durante alterações financeiras para impedir
+     * lost updates quando transações concorrentes ajustam o mesmo saldo.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Account a WHERE a.id = :id AND a.userId = :userId")
+    Optional<Account> findByIdAndUserIdForUpdate(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId);
+
 
     /**
      * Verifica se um nome de conta já existe para o usuário (evitar duplicatas).
