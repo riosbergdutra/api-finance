@@ -11,6 +11,7 @@ import com.api.finance.category.exception.CategoryNotFoundException;
 import com.api.finance.goal.exception.GoalNotFoundException;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
+import com.api.finance.user.exception.UserIdentityDeletedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -70,6 +71,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(SessionNotFoundException.class)
     public ResponseEntity<ErrorResponseDTO> handleSessionNotFound(SessionNotFoundException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(UserIdentityDeletedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleDeletedIdentity(UserIdentityDeletedException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.GONE);
     }
 
     /** JWT inválido, expirado ou mal-formado */
