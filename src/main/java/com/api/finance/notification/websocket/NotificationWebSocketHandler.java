@@ -7,6 +7,7 @@ import com.api.finance.bff.service.AuthService;
 import com.api.finance.bff.event.BffSessionRevokedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -17,6 +18,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Handler de WebSocket para notificações em tempo real.
@@ -49,6 +53,57 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
      * Um usuário pode ter múltiplas abas abertas.
      */
     private final Map<String, List<WebSocketSession>> sessoesPorUsuario = new ConcurrentHashMap<>();
+    private final AtomicInteger falhasConsecutivasDeRevalidacao = new AtomicInteger();
+
+    /**
+     * Redis Pub/Sub is best-effort. Periodic authoritative checks ensure a lost
+     * revocation message cannot leave a remote socket alive indefinitely.
+     * After repeated Redis failures this node closes its sockets (fail-closed).
+     */
+    @Scheduled(fixedDelayString = "${app.bff.websocket.revalidation-interval:60000}")
+    public void revalidarSessoesAtivas() {
+        Set<String> sessionIds = new HashSet<>();
+        sessoesPorUsuario.values().forEach(sessions -> sessions.forEach(session -> {
+            Object value = session.getAttributes().get("bffSessionId");
+            if (value instanceof String id && !id.isBlank()) {
+                sessionIds.add(id);
+            }
+        }));
+
+        if (sessionIds.isEmpty()) {
+            falhasConsecutivasDeRevalidacao.set(0);
+            return;
+        }
+
+        try {
+            for (String sessionId : sessionIds) {
+                if (!authService.sessaoAtiva(sessionId)) {
+                    closeConnectionsForRevokedSession(sessionId);
+                }
+            }
+            falhasConsecutivasDeRevalidacao.set(0);
+        } catch (RuntimeException redisUnavailable) {
+            int failures = falhasConsecutivasDeRevalidacao.incrementAndGet();
+            log.warn("Falha ao revalidar sessões WebSocket no Redis (tentativa consecutiva {}).", failures);
+            if (failures >= 3) {
+                closeAllConnections();
+                falhasConsecutivasDeRevalidacao.set(0);
+            }
+        }
+    }
+
+    private void closeAllConnections() {
+        sessoesPorUsuario.values().forEach(sessions -> sessions.forEach(session -> {
+            try {
+                if (session.isOpen()) {
+                    session.close(CloseStatus.SERVICE_RESTARTED);
+                }
+            } catch (IOException ignored) {
+                // Closing every local socket is best-effort after Redis becomes unavailable.
+            }
+        }));
+        sessoesPorUsuario.clear();
+    }
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
