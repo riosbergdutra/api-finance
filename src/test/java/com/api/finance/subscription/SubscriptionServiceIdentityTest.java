@@ -109,7 +109,7 @@ class SubscriptionServiceIdentityTest {
 
         service.ativarPro(INTERNAL_USER_ID, "pi_test", "sub_test", inicio, fim);
 
-        verify(eventPublisher).publishEvent(argThat(event ->
+        verify(eventPublisher).publishEvent(argThat((Object event) ->
                 event instanceof FinanceEvents.ProAtivadoEvent pro
                         && KEYCLOAK_ID.toString().equals(pro.keycloakId())
                         && INTERNAL_USER_ID.equals(pro.userId())
