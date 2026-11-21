@@ -83,6 +83,13 @@ public class TransactionService {
         Account account = lockedAccounts.get(req.accountId());
         Account destinationAccount = destinationAccountId == null ? null : lockedAccounts.get(destinationAccountId);
 
+        if (!account.isActive()) {
+            throw new IllegalArgumentException("Não é possível lançar transações em uma conta inativa.");
+        }
+        if (destinationAccount != null) {
+            validarTransferenciaEntreContas(account, destinationAccount);
+        }
+
         String fingerprint = TransactionFingerprint.of(
                 userId, req.accountId(), req.valor(), req.data(), req.descricao()
         ).value();
@@ -181,6 +188,10 @@ public class TransactionService {
         Account destinationAccount = destinationAccountIdToLock == null
                 ? null
                 : lockedAccounts.get(destinationAccountIdToLock);
+
+        if (newDestinationAccountId != null) {
+            validarTransferenciaEntreContas(account, destinationAccount);
+        }
 
         TransactionType tipoAntigo = trx.getTipo();
         TransactionStatus statusAntigo = trx.getStatus();
@@ -311,6 +322,16 @@ public class TransactionService {
      * Bloqueia todas as contas financeiras em ordem determinística para reduzir
      * deadlocks em transferências simultâneas entre as mesmas contas.
      */
+    private void validarTransferenciaEntreContas(Account origem, Account destino) {
+        if (destino == null || !destino.isActive()) {
+            throw new IllegalArgumentException("A conta de destino deve existir e estar ativa.");
+        }
+        if (origem.getCurrency() == null || destino.getCurrency() == null
+                || !origem.getCurrency().equalsIgnoreCase(destino.getCurrency())) {
+            throw new IllegalArgumentException("Transferências exigem contas na mesma moeda.");
+        }
+    }
+
     private Map<UUID, Account> lockAccounts(UUID userId, UUID... accountIds) {
         if (accountIds.length == 0 || accountIds[0] == null) {
             throw new IllegalArgumentException("Conta de origem é obrigatória.");
