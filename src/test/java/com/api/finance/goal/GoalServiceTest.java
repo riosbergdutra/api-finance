@@ -8,7 +8,7 @@ import com.api.finance.goal.exception.GoalNotFoundException;
 import com.api.finance.goal.model.Goal;
 import com.api.finance.goal.repository.GoalRepository;
 import com.api.finance.goal.service.GoalService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,7 +35,7 @@ import static org.mockito.BDDMockito.*;
 class GoalServiceTest {
 
     @Mock GoalRepository goalRepository;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
     @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks GoalService goalService;
 
@@ -54,7 +54,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("listar: retorna todas as metas quando apenasPendentes=false")
     void listarTodasMetas() {
-            given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+            given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         goal.setConcluida(true);
         given(goalRepository.findByUserId(USER_ID)).willReturn(List.of(goal));
 
@@ -121,7 +121,6 @@ class GoalServiceTest {
         @Test
         @DisplayName("adiciona valor e não conclui quando ainda abaixo do alvo")
         void adicionaValorSemConcluir() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, alvo=5000, deposito=500 → 1500 (ainda pendente)
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(500));
@@ -137,7 +136,6 @@ class GoalServiceTest {
         @Test
         @DisplayName("conclui automaticamente quando atinge o alvo")
         void concluiAutomaticamenteAoAtingirAlvo() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, alvo=5000, deposito=4000 → 5000 = concluída
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(4000));
@@ -152,7 +150,6 @@ class GoalServiceTest {
         @Test
         @DisplayName("conclui automaticamente quando ultrapassa o alvo")
         void concluiQuandoUltrapassaAlvo() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(99999));
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -166,7 +163,6 @@ class GoalServiceTest {
         @Test
         @DisplayName("lança IllegalStateException quando meta já concluída")
         void lancaExcecaoMetaConcluida() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             goal.setConcluida(true);
             given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
@@ -215,7 +211,6 @@ class GoalServiceTest {
     @Test
     @DisplayName("concluir: marca meta como concluída manualmente")
     void concluirManualmente() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
         given(goalRepository.save(any())).willReturn(goal);
