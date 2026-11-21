@@ -48,6 +48,8 @@ import static org.mockito.BDDMockito.*;
 @DisplayName("TransactionService")
 class TransactionServiceTest {
 
+    private static final UUID DESTINATION_ACCOUNT_ID = UUID.fromString("00000000-0000-0000-0000-000000000011");
+
     @Mock TransactionRepository transactionRepository;
     @Mock AccountRepository accountRepository;
     @Mock CategoryRepository categoryRepository;
@@ -68,6 +70,14 @@ class TransactionServiceTest {
         account = account();
         transaction = transaction();
         given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+    }
+
+    private Account destinationAccount() {
+        Account destination = account();
+        destination.setId(DESTINATION_ACCOUNT_ID);
+        destination.setName("Conta destino");
+        destination.setBalance(new BigDecimal("200.00"));
+        return destination;
     }
 
     // ─── listar ──────────────────────────────────────────────────────
@@ -193,6 +203,48 @@ class TransactionServiceTest {
         }
 
         @Test
+        @DisplayName("transferência confirmada debita origem e credita destino")
+        void transferenciaDebitaOrigemECreditaDestino() {
+            Account destination = destinationAccount();
+            CreateTransactionRequest req = new CreateTransactionRequest(
+                    ACCOUNT_ID, DESTINATION_ACCOUNT_ID, null, TransactionType.TRANSFERENCIA,
+                    TransactionStatus.CONFIRMADA, new BigDecimal("100.00"),
+                    "Transferência", null, LocalDate.now());
+
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+            given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
+            given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean()))
+                    .willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID)))
+                    .willReturn(Optional.of(transaction));
+
+            transactionService.criar(req, caller);
+
+            assertThat(account.getBalance()).isEqualByComparingTo("900.00");
+            assertThat(destination.getBalance()).isEqualByComparingTo("300.00");
+            then(accountRepository).should().save(account);
+            then(accountRepository).should().save(destination);
+        }
+
+        @Test
+        @DisplayName("rejeita transferência sem conta de destino")
+        void rejeitaTransferenciaSemDestino() {
+            CreateTransactionRequest req = new CreateTransactionRequest(
+                    ACCOUNT_ID, null, null, TransactionType.TRANSFERENCIA,
+                    TransactionStatus.CONFIRMADA, new BigDecimal("100.00"),
+                    "Transferência", null, LocalDate.now());
+
+            assertThatThrownBy(() -> transactionService.criar(req, caller))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("destino");
+        }
+
+        @Test
         @DisplayName("usa categorização automática quando categoryId é nulo")
         void usaCategorizacaoAutomatica() {
             Category cat = category();
@@ -219,6 +271,37 @@ class TransactionServiceTest {
     class Atualizar {
 
         @Test
+        @DisplayName("atualizar transferência reverte e reaplica os dois saldos")
+        void atualizarTransferenciaAtualizaOrigemEDestino() {
+            Account source = account();
+            source.setBalance(new BigDecimal("900.00"));
+            Account destination = destinationAccount();
+            destination.setBalance(new BigDecimal("300.00"));
+            transaction.setTipo(TransactionType.TRANSFERENCIA);
+            transaction.setContaDestinoId(DESTINATION_ACCOUNT_ID);
+            transaction.setTransferDestinationApplied(true);
+
+            UpdateTransactionRequest req = new UpdateTransactionRequest(
+                    null, TransactionType.TRANSFERENCIA, TransactionStatus.CONFIRMADA,
+                    new BigDecimal("200.00"), "Transferência ajustada", null, LocalDate.now());
+
+            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID))
+                    .willReturn(Optional.of(transaction));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(source));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+            given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
+            given(transactionRepository.save(any())).willReturn(transaction);
+
+            transactionService.atualizar(TRANSACTION_ID, req, caller);
+
+            assertThat(source.getBalance()).isEqualByComparingTo("800.00");
+            assertThat(destination.getBalance()).isEqualByComparingTo("400.00");
+            assertThat(transaction.isTransferDestinationApplied()).isTrue();
+        }
+
+        @Test
         @DisplayName("reverte saldo antigo e aplica novo quando ambas confirmadas")
         void reverteEAplicaNovaSaldo() {
             // Transação original: DESPESA 100 CONFIRMADA → conta 1000
@@ -242,6 +325,31 @@ class TransactionServiceTest {
 
     @Nested @DisplayName("deletar")
     class Deletar {
+
+        @Test
+        @DisplayName("deletar transferência reverte origem e destino")
+        void deletaTransferenciaReverteOrigemEDestino() {
+            Account source = account();
+            source.setBalance(new BigDecimal("900.00"));
+            Account destination = destinationAccount();
+            destination.setBalance(new BigDecimal("300.00"));
+            transaction.setTipo(TransactionType.TRANSFERENCIA);
+            transaction.setContaDestinoId(DESTINATION_ACCOUNT_ID);
+            transaction.setTransferDestinationApplied(true);
+
+            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID))
+                    .willReturn(Optional.of(transaction));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(source));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+
+            transactionService.deletar(TRANSACTION_ID, caller);
+
+            assertThat(source.getBalance()).isEqualByComparingTo("1000.00");
+            assertThat(destination.getBalance()).isEqualByComparingTo("200.00");
+            then(transactionRepository).should().delete(transaction);
+        }
 
         @Test
         @DisplayName("deleta transação e reverte saldo da conta")
