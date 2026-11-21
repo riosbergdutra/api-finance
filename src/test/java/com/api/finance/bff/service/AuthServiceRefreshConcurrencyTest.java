@@ -6,6 +6,7 @@ import com.api.finance.bff.repository.AuthSessionRepository;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUserProvider;
 import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.subscription.application.port.in.SubscriptionAccountDeletionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
