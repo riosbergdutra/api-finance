@@ -42,6 +42,7 @@ public class BudgetAlertScheduler {
     private final NotificationService notificationService;
 
     @Scheduled(cron = "0 0 9 * * *", zone = "America/Sao_Paulo")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "budgetAlertScheduler", lockAtMostFor = "PT4H", lockAtLeastFor = "PT30S")
     public void verificarAlertasOrcamento() {
         log.info("[Scheduler] Iniciando verificação de alertas de orçamento (paginado)");
         int totalAlertas = 0;
