@@ -113,4 +113,16 @@ public class NotificationEventListener {
                 "Seu plano PRO expirou. Renove para continuar com acesso ilimitado a todas as funcionalidades."
         );
     }
+    
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onAssinaturaCancelada(FinanceEvents.AssinaturaCanceladaEvent event) {
+        notificationService.criarNotificacao(
+                event.keycloakId(),
+                event.userId(),
+                NotificationType.SUBSCRIPTION_CANCELED,
+                "Assinatura PRO cancelada",
+                "Sua assinatura PRO foi cancelada. Você voltou ao plano FREE."
+        );
+    }
 }
