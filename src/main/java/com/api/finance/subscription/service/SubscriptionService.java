@@ -198,17 +198,23 @@ public class SubscriptionService {
             throw new IllegalArgumentException("Dados do evento Stripe incompletos.");
         }
 
-        Subscription sub = subscriptionRepository.findByStripeSubscriptionIdForUpdate(stripeSubscriptionId)
-                .orElseGet(() -> {
-                    if (metadataUserId == null) {
-                        throw new IllegalStateException(
-                                "Subscription Stripe desconhecida e sem metadata de usuário para associação.");
-                    }
-                    subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), metadataUserId);
-                    return subscriptionRepository.findByUserIdForUpdate(metadataUserId)
-                            .orElseThrow(() -> new IllegalStateException(
-                                    "Não foi possível bloquear a assinatura local para aplicar o evento Stripe."));
-                });
+        Optional<Subscription> existing = subscriptionRepository
+                .findByStripeSubscriptionIdForUpdate(stripeSubscriptionId);
+        Subscription sub;
+        if (existing.isPresent()) {
+            sub = existing.get();
+        } else {
+            if (metadataUserId == null) {
+                // An unknown provider subscription cannot be safely associated
+                // with a local user. Acknowledge it instead of retrying forever.
+                log.warn("[Stripe] Evento de subscription desconhecida sem metadata de usuário; nenhum entitlement alterado.");
+                return false;
+            }
+            subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), metadataUserId);
+            sub = subscriptionRepository.findByUserIdForUpdate(metadataUserId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Não foi possível bloquear a assinatura local para aplicar o evento Stripe."));
+        }
 
         if (metadataUserId != null && !metadataUserId.equals(sub.getUserId())) {
             throw new IllegalStateException("Metadata do Stripe não corresponde ao proprietário da assinatura.");
