@@ -112,7 +112,7 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
-            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(), anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(), anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
             given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             TransactionResponse result = transactionService.criar(req, caller);
@@ -134,7 +134,7 @@ class TransactionServiceTest {
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
-                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
             given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
@@ -155,7 +155,7 @@ class TransactionServiceTest {
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
-                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
             given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
@@ -204,7 +204,7 @@ class TransactionServiceTest {
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar("Padaria Estrela", USER_ID)).willReturn(Optional.of(cat));
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
-                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
             given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
