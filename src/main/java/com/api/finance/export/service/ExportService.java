@@ -5,7 +5,7 @@ import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -40,7 +40,7 @@ public class ExportService {
 
     private final TransactionRepository transactionRepository;
     private final SubscriptionService subscriptionService;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
 
     private static final DateTimeFormatter BR_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
