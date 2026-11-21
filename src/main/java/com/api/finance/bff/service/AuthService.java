@@ -347,7 +347,10 @@ public class AuthService {
 
     @SuppressWarnings("unused")
     private AuthResponseDTO refreshFallback(String sessionId, Throwable t) {
-        log.error("Circuit Breaker OPEN: Keycloak indisponível para refresh. {}", t.getMessage());
+        if (t instanceof SessionNotFoundException invalidSession) {
+            throw invalidSession;
+        }
+        log.warn("Circuit Breaker OPEN: Keycloak indisponível para refresh.");
         throw new AuthIntegrationException("O serviço de autenticação está temporariamente indisponível.");
     }
 }
