@@ -63,6 +63,18 @@ Stripe is deliberately locked to Test Mode. The production profile hardcodes `st
 
 Choose pool sizes based on PostgreSQL's total connection budget across all instances and other clients.
 
+## Production container image
+
+The root `Dockerfile` builds the application in a Maven/Java 21 stage and copies only the executable JAR into a Java 21 JRE runtime image. The runtime runs as an unprivileged UID/GID 10001. CI builds this image after `mvn verify`.
+
+Build locally with:
+
+```bash
+docker build --pull -t financeflow-backend:local .
+```
+
+Pass production configuration at runtime through the deployment platform's secret/environment mechanism. Never bake database, Redis, Keycloak, or Stripe credentials into build arguments or image layers.
+
 ## Reverse proxy and infrastructure
 
 - The Nginx configuration in this repository is a local/example HTTP configuration, not a complete public TLS ingress. Terminate TLS at a trusted ingress/load balancer, forward the original scheme/host, and restrict access to the backend.
