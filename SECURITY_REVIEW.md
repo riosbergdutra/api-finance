@@ -21,12 +21,13 @@ This review separates code changes from external configuration and operational c
 - [x] Recurring subscription updates use pessimistic row locking and persist the latest provider event timestamp/ID (V7); older events are ignored.
 - [x] Non-active recurring Stripe states do not grant PRO; a cancellation event cannot be undone by an older event. Events for deleted local users cannot recreate orphan subscription rows.
 - [x] Stripe subscription IDs are unique locally (V6); deletion targets the exact matching subscription.
-- [x] Production uses Flyway and Hibernate validate; database migrations are versioned V1–V8.
+- [x] Production uses Flyway and Hibernate validate; database migrations are versioned V1–V9.
 - [x] Bounded HikariCP pool and explicit HTTP connect/read timeouts are configured.
 - [x] Financial transfers update both accounts atomically with deterministic locking; historical reversal behavior is tracked by V5.
 - [x] FREE-plan quota checks are serialized by a per-user subscription row lock.
 - [x] Dashboard queries use a dedicated bounded executor; exports have a configurable maximum row count.
 - [x] ArchUnit tests enforce key modular-monolith boundaries.
+- [x] Daily schedulers and the Keycloak deletion outbox worker use PostgreSQL-backed ShedLock leases, preventing duplicate execution across application replicas.
 
 ## External configuration and release checks still required
 
@@ -37,7 +38,7 @@ This review separates code changes from external configuration and operational c
 - [ ] **Migration rehearsal:** apply V1–V8 to a disposable PostgreSQL copy containing representative existing data; verify V5 transfer history, V6 duplicate detection, V7 compatibility, and backup/restore.
 - [ ] **Historical transfer reconciliation:** V5 preserves the previous behavior for historical destination balances. Review actual ledger records before any backfill; never credit historical destination accounts without reconciliation.
 - [ ] **Redis operations:** configure managed Redis ACLs, TLS, persistence/backup, memory limits, eviction policy, alerting, and recovery drills. Refresh tokens remain in Redis and Redis is security-critical.
-- [ ] **Scheduler scale-out:** every application replica currently runs its own scheduled jobs. Before running multiple production replicas, add a distributed scheduler lock or persistent scheduler and test failover.
+- [ ] **Scheduler failover rehearsal:** ShedLock now prevents concurrent execution across replicas using PostgreSQL database time. Test lock expiry, process crashes, and recovery in the target deployment.
 - [ ] **Open Finance:** the current service is a stub, not a real aggregator integration. Keep it unavailable in product claims until consent, provider integration, secure token storage, synchronization, and revocation exist.
 - [ ] **Deployment hardening:** provide a production image and deployment manifest, TLS ingress, private database/cache/monitoring networks, non-default credentials, trusted proxy configuration, backup/restore drills, alerting, and incident runbooks. The checked-in Compose and Nginx files are local/example configurations.
 - [ ] **Secrets:** rotate credentials previously exposed during development. Never reuse local Compose defaults in production.
