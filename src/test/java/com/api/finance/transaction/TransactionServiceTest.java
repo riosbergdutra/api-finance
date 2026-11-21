@@ -19,9 +19,8 @@ import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.transaction.service.TransactionService;
 import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.budget.service.BudgetService;
-import com.api.finance.user.model.User;
 import org.springframework.context.ApplicationEventPublisher;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -53,7 +52,7 @@ class TransactionServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock CategoryRepository categoryRepository;
     @Mock CategoryService categoryService;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
     @Mock SubscriptionService subscriptionService;
     @Mock BudgetService budgetService;
     @Mock ApplicationEventPublisher eventPublisher;
@@ -68,7 +67,7 @@ class TransactionServiceTest {
         caller = caller();
         account = account();
         transaction = transaction();
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listar ──────────────────────────────────────────────────────
@@ -106,7 +105,6 @@ class TransactionServiceTest {
         @Test
         @DisplayName("cria transação DESPESA e debita saldo da conta")
         void criaDespesaEDebitaSaldo() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(100), "Mercado", "Supermercado X", LocalDate.now());
@@ -128,7 +126,6 @@ class TransactionServiceTest {
         @Test
         @DisplayName("cria transação RECEITA e credita saldo da conta")
         void criaReceitaECreditaSaldo() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.RECEITA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(500), "Salário", null, LocalDate.now());
@@ -150,7 +147,6 @@ class TransactionServiceTest {
         @DisplayName("não ajusta saldo quando status é PENDENTE")
         void naoAjustaSaldoPendente() {
             BigDecimal saldoOriginal = account.getBalance();
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.PENDENTE,
                     BigDecimal.valueOf(200), "Fatura", null, LocalDate.now());
@@ -171,7 +167,6 @@ class TransactionServiceTest {
         @Test
         @DisplayName("lança DuplicateTransactionException quando transação duplicada")
         void lancaExcecaoTransacaoDuplicada() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "Mercado", null, LocalDate.now());
@@ -187,7 +182,6 @@ class TransactionServiceTest {
         @Test
         @DisplayName("lança AccountNotFoundException quando conta não pertence ao usuário")
         void lancaExcecaoContaNaoEncontrada() {
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     UUID.randomUUID(), null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "X", null, LocalDate.now());
@@ -202,7 +196,6 @@ class TransactionServiceTest {
         @DisplayName("usa categorização automática quando categoryId é nulo")
         void usaCategorizacaoAutomatica() {
             Category cat = category();
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(50), "Padaria", "Padaria Estrela", LocalDate.now());
@@ -229,7 +222,6 @@ class TransactionServiceTest {
         @DisplayName("reverte saldo antigo e aplica novo quando ambas confirmadas")
         void reverteEAplicaNovaSaldo() {
             // Transação original: DESPESA 100 CONFIRMADA → conta 1000
-            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             UpdateTransactionRequest req = new UpdateTransactionRequest(
                     null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());
