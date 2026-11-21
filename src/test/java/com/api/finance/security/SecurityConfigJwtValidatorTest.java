@@ -32,4 +32,21 @@ class SecurityConfigJwtValidatorTest {
         assertTrue(validator.validate(wrongClient).hasErrors());
         assertTrue(validator.validate(missingClient).hasErrors());
     }
+
+    @Test
+    void requiresTheConfiguredApiAudience() {
+        Jwt valid = Jwt.withTokenValue("opaque")
+                .header("alg", "RS256")
+                .subject("user-1")
+                .audience(java.util.List.of("finance-api"))
+                .build();
+        Jwt wrongAudience = Jwt.withTokenValue("opaque")
+                .header("alg", "RS256")
+                .subject("user-1")
+                .audience(java.util.List.of("account"))
+                .build();
+
+        assertFalse(SecurityConfig.audienceValidator("finance-api").validate(valid).hasErrors());
+        assertTrue(SecurityConfig.audienceValidator("finance-api").validate(wrongAudience).hasErrors());
+    }
 }
