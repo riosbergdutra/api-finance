@@ -234,18 +234,9 @@ public class ExportService {
         return style;
     }
 
-    /**
-     * FIX: retorna caller.id() diretamente (keycloakId vindo do jwt.getSubject()).
-     *
-     * A tabela subscription usa o keycloakId como user_id — o mesmo padrão de
-     * AccountService, TransactionService e todos os outros services do projeto.
-     *
-     * O código anterior fazia findIdByKeycloakId(caller.id()), que retornava o
-     * UUID interno da tabela users — um valor diferente do que está salvo em
-     * subscription.user_id, fazendo o assertIsPro nunca encontrar a subscription
-     * correta e sempre criar uma FREE nova, bloqueando usuários PRO com 402.
-     */
+    /** Resolve a identidade externa para o UUID interno usado pela persistência. */
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return caller.id();
+        return userDirectory.findInternalUserId(caller.id())
+                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }
