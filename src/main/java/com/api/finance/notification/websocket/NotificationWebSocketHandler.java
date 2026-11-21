@@ -242,13 +242,22 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
             return null;
         }
 
+        String found = null;
         for (String cookie : cookieHeader.split(";")) {
             String[] pair = cookie.trim().split("=", 2);
             if (pair.length == 2 && "SESSION_ID".equals(pair[0])) {
-                return pair[1].isBlank() ? null : pair[1];
+                if (found != null || pair[1].length() != 36) {
+                    return null;
+                }
+                try {
+                    java.util.UUID.fromString(pair[1]);
+                } catch (IllegalArgumentException malformed) {
+                    return null;
+                }
+                found = pair[1];
             }
         }
-        return null;
+        return found;
     }
 
     private void recusarConexao(WebSocketSession session, String motivo) {
