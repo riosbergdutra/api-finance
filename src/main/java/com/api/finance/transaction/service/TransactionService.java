@@ -150,7 +150,6 @@ public class TransactionService {
     @Transactional
     public TransactionResponse atualizar(UUID id, UpdateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        User user = resolveUser(caller);
 
         Transaction trx = transactionRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
@@ -188,7 +187,7 @@ public class TransactionService {
         Transaction saved = transactionRepository.save(trx);
 
         // FIX: eventos de atualização
-        String keycloakId = user.getKeycloakId().toString();
+        String keycloakId = caller.id().toString();
 
         if (req.status() == TransactionStatus.PENDENTE) {
             eventPublisher.publishEvent(new FinanceEvents.TransacaoPendenteEvent(
