@@ -4,6 +4,8 @@ import com.api.finance.transaction.model.Transaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,6 +31,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             Pageable pageable);
 
     Optional<Transaction> findByIdAndUserId(UUID id, UUID userId);
+
+    /** Serializa edições/exclusões concorrentes do mesmo lançamento financeiro. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.id = :id AND t.userId = :userId")
+    Optional<Transaction> findByIdAndUserIdForUpdate(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId);
+
 
     @Query("""
         SELECT COALESCE(SUM(t.valor), 0) FROM Transaction t
