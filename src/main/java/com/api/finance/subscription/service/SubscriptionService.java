@@ -161,9 +161,8 @@ public class SubscriptionService implements SubscriptionAccountDeletionPort {
     public void cancelarParaExclusao(UUID userId) {
         subscriptionRepository.findByUserIdForUpdate(userId).ifPresent(sub -> {
             String stripeSubscriptionId = sub.getStripeSubscriptionId();
-            if (stripeSubscriptionId != null && !stripeSubscriptionId.isBlank()
-                    && sub.getStatus() != SubscriptionStatus.CANCELLED
-                    && sub.getStatus() != SubscriptionStatus.EXPIRED) {
+            if (stripeSubscriptionId != null && !stripeSubscriptionId.isBlank()) {
+                // Reconcile against Stripe even if the local status is stale.
                 stripeService.cancelarSubscription(stripeSubscriptionId);
             }
             sub.setPlano(PlanType.FREE);
