@@ -11,6 +11,7 @@ import com.api.finance.subscription.application.port.in.SubscriptionAccountDelet
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.SetOperations;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -37,6 +38,7 @@ class AuthServiceAccountDeletionTest {
         AuthSessionRepository sessions = mock(AuthSessionRepository.class);
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         SetOperations<String, String> setOperations = mock(SetOperations.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
         UserDirectoryPort users = mock(UserDirectoryPort.class);
         AuthenticatedUserProvider userProvider = mock(AuthenticatedUserProvider.class);
         var events = mock(org.springframework.context.ApplicationEventPublisher.class);
@@ -50,6 +52,9 @@ class AuthServiceAccountDeletionTest {
         when(sessions.findById("session-2")).thenReturn(Optional.of(second));
         when(sessions.findById("session-legacy")).thenReturn(Optional.of(legacy));
         when(redis.opsForSet()).thenReturn(setOperations);
+        when(redis.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(any(String.class), any(String.class), any(java.time.Duration.class)))
+                .thenReturn(true);
         when(setOperations.members("auth:user-sessions:" + keycloakId))
                 .thenReturn(Set.of("session-1", "session-2"));
         when(userProvider.get(any(Jwt.class))).thenReturn(new AuthenticatedUser(keycloakId));
