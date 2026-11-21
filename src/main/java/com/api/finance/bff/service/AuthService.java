@@ -87,8 +87,10 @@ public class AuthService {
             nome = email != null ? email.split("@")[0] : "Usuário";
         }
 
+        final String emailFinal = email;
+        final String nomeFinal = nome;
         return withIdentityLock(keycloakId, () -> {
-            garantirExistenciaUsuario(keycloakId, email, nome);
+            garantirExistenciaUsuario(keycloakId, emailFinal, nomeFinal);
             String sessionId = criarSessaoNoRedis(response.accessToken(), response.refreshToken(), keycloakId);
             return new AuthResponseDTO(sessionId);
         });
