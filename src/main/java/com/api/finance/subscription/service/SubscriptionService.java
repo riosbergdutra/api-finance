@@ -62,6 +62,19 @@ public class SubscriptionService {
     // ── Verificação de limites ────────────────────────────────────────────
 
     /**
+     * Serializa operações que consomem cotas FREE do mesmo usuário.
+     * Deve ser chamado antes de contar recursos e mantido até o commit da criação.
+     */
+    @Transactional
+    public void lockSubscriptionForQuotaCheck(UUID userId) {
+        subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), userId);
+        subscriptionRepository.findByUserIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Não foi possível bloquear a assinatura para verificar limites."));
+    }
+
+
+    /**
      * Verifica se o usuário pode criar mais uma conta.
      * Lança PlanLimitExceededException (402) se FREE e já tem 3 contas.
      * Chamado pelo AccountService antes de criar.
