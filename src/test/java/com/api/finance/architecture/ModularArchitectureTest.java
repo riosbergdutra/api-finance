@@ -59,4 +59,15 @@ class ModularArchitectureTest {
 
         rule.check(applicationClasses);
     }
+    @Test
+    void bffAndNotificationMustUseUserApplicationPortInsteadOfUserRepository() {
+        ArchRule rule = noClasses()
+                .that().resideInAnyPackage("..bff..", "..notification..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("com.api.finance.user.repository..")
+                .because("cross-module user access must go through the public UserDirectoryPort");
+
+        rule.check(applicationClasses);
+    }
+
 }
