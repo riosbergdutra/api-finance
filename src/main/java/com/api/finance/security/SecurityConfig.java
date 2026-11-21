@@ -35,6 +35,9 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
 
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}")
+    private String jwkSetUri;
+
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String clientId;
 
@@ -53,7 +56,8 @@ public class SecurityConfig {
             BffSessionAuthenticationFilter sessionAuthenticationFilter) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info",
+                                "/actuator/prometheus").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback", "/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
@@ -127,7 +131,9 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withIssuerLocation(issuerUri).build();
+        NimbusJwtDecoder decoder = (jwkSetUri == null || jwkSetUri.isBlank())
+                ? NimbusJwtDecoder.withIssuerLocation(issuerUri).build()
+                : NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
         OAuth2TokenValidator<Jwt> issuerAndTimeValidator = JwtValidators.createDefaultWithIssuer(issuerUri);
         OAuth2TokenValidator<Jwt> authorizedPartyValidator = new JwtClaimValidator<>("azp", clientId::equals);
         if (requiredAudience != null && !requiredAudience.isBlank()) {
