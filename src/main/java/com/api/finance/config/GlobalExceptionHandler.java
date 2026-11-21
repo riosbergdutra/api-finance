@@ -45,6 +45,11 @@ public class GlobalExceptionHandler {
         return buildResponse(ex.getMessage(), HttpStatus.PAYLOAD_TOO_LARGE);
     }
 
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleNotImplemented(UnsupportedOperationException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_IMPLEMENTED);
+    }
+
     @ExceptionHandler(PlanLimitExceededException.class)
     public ResponseEntity<ErrorResponseDTO> handlePlanLimit(PlanLimitExceededException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.PAYMENT_REQUIRED);
