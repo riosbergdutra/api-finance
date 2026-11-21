@@ -24,6 +24,7 @@ spring:
           keycloak:
             client-id: ${KEYCLOAK_CLIENT_ID}
             client-secret: ${KEYCLOAK_CLIENT_SECRET}
+            redirect-uri: ${AUTH_REDIRECT_URI}
       provider:
         keycloak:
           issuer-uri: ${KEYCLOAK_ISSUER_URI}
