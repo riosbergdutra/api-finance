@@ -6,12 +6,12 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * Habilita @Scheduled no contexto Spring.
  *
- * Os jobs rodam em Virtual Threads pois o executor padrão do Spring
- * herda o executor configurado em FinanceApplication (TomcatProtocolHandlerCustomizer).
+ * O scheduler do Spring é independente do executor HTTP do Tomcat.
+ * O número de threads é configurado em spring.task.scheduling.pool.size.
  *
- * Para produção com múltiplas instâncias: substitua @Scheduled por Quartz
- * com JobStoreTX (PostgreSQL) para garantir que cada job rode apenas uma vez
- * mesmo com N instâncias do app ativas simultaneamente.
+ * Em múltiplas instâncias, cada instância executa seus próprios @Scheduled.
+ * Para execução distribuída exatamente uma vez, será necessário um lock
+ * distribuído ou Quartz com JobStore persistente antes de escalar horizontalmente.
  */
 @Configuration
 @EnableScheduling
