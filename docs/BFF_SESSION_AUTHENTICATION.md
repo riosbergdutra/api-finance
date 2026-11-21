@@ -28,9 +28,9 @@ FinanceFlow uses a Backend-for-Frontend (BFF) session model. The browser never r
 2. Revoke all known BFF Redis sessions and publish WebSocket revocation events.
 3. Cancel any recurring Stripe subscription; if Stripe cannot confirm cancellation, account deletion stops so billing is not silently left active.
 4. Delete the Keycloak identity through a separate confidential service-account client using the Admin REST API.
-5. Delete all local user-owned records in one database transaction, including transactions, budgets, merchant rules, categories, goals, notifications, subscriptions, accounts, and the user row.
+5. Delete all local user-owned records and write a hashed identity tombstone plus a durable Keycloak deletion outbox record in one database transaction. The provider identity is deleted immediately when possible; otherwise a scheduled worker retries with backoff.
 
-The deletion endpoint fails closed when Redis or the Keycloak Admin API is unavailable. The local financial data is not deleted if the provider identity deletion cannot be confirmed. The service account must be configured with only the realm-management `manage-users` role. Do not reuse the browser login client secret.
+The deletion endpoint fails closed when Redis or Stripe cannot complete session revocation/billing cancellation. Local financial data erasure, the hashed identity tombstone, and the provider-deletion outbox are committed atomically. The Keycloak Admin API deletion is attempted immediately and retried with exponential backoff after restarts until it succeeds. The tombstone prevents OAuth callback from silently recreating the erased local account while provider deletion is pending. The service account must be configured with only the realm-management `manage-users` role. Do not reuse the browser login client secret.
 
 ## Deployment settings
 
