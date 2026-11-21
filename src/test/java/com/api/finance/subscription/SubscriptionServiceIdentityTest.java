@@ -255,6 +255,39 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void accountDeletionMustCancelRecurringStripeBillingBeforeLocalRemoval() {
+        Subscription pro = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.PRO)
+                .status(SubscriptionStatus.ACTIVE)
+                .stripeSubscriptionId("sub_delete")
+                .fimPeriodo(LocalDate.now().plusDays(30))
+                .build();
+        when(subscriptionRepository.findByUserIdForUpdate(INTERNAL_USER_ID))
+                .thenReturn(Optional.of(pro));
+
+        service.cancelarParaExclusao(INTERNAL_USER_ID);
+
+        verify(stripeService).cancelarSubscription("sub_delete");
+        verify(subscriptionRepository).save(pro);
+        assertEquals(PlanType.FREE, pro.getPlano());
+        assertEquals(SubscriptionStatus.CANCELLED, pro.getStatus());
+    }
+
+    @Test
+    void stripeEventForDeletedLocalUserMustNotCreateOrphanSubscription() {
+        when(subscriptionRepository.findByStripeSubscriptionIdForUpdate("sub_orphan"))
+                .thenReturn(Optional.empty());
+        when(userDirectory.findIdentityProviderId(INTERNAL_USER_ID)).thenReturn(Optional.empty());
+
+        boolean applied = service.aplicarEventoStripeSubscription(
+                "sub_orphan", INTERNAL_USER_ID, "canceled", null, 400L, "evt_orphan");
+
+        assertFalse(applied);
+        verify(subscriptionRepository, never()).insertFreeIfAbsent(any(UUID.class), any(UUID.class));
+    }
+
+    @Test
     void ativarProMustResolveKeycloakIdFromInternalUserIdForDomainEvent() {
         Subscription free = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
