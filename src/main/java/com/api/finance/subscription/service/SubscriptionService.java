@@ -81,7 +81,7 @@ public class SubscriptionService {
      */
     @Transactional(readOnly = true)
     public void assertPodeCriarTransacao(UUID userId, long transacoesNoMes) {
-        if (transacoesNoMes >= FREE_LIMITE_TRANSACOES_MES && !getOrCreateFree(userId).isPro()) {
+        if (transacoesNoMes >= FREE_LIMITE_TRANSACOES_MES && !isPro(userId)) {
             throw new PlanLimitExceededException(
                     "Plano gratuito permite no máximo " + FREE_LIMITE_TRANSACOES_MES +
                             " transações por mês. Faça upgrade para o plano PRO.");
