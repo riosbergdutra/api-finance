@@ -61,10 +61,10 @@ class AuthServiceAccountDeletionTest {
                 redis,
                 mock(OAuthLoginAttemptStore.class),
                 users,
+                subscriptionDeletion,
                 mock(org.springframework.security.oauth2.jwt.JwtDecoder.class),
                 userProvider,
                 events,
-                subscriptionDeletion,
                 deletionProcessor
         );
 
