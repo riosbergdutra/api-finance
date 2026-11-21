@@ -33,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.UUID;
@@ -135,6 +136,12 @@ public class AuthService {
             throw new AuthIntegrationException("Renovação de sessão interrompida.");
         } catch (SessionNotFoundException | AuthIntegrationException known) {
             throw known;
+        } catch (RestClientResponseException providerResponse) {
+            if (providerResponse.getResponseBodyAsString().contains("invalid_grant")) {
+                revogarSessaoLocal(current);
+                throw new SessionNotFoundException("Sessão inválida ou expirada.");
+            }
+            throw new AuthIntegrationException("O provedor de autenticação não conseguiu renovar a sessão.");
         } catch (Exception failure) {
             throw new AuthIntegrationException("Não foi possível atualizar o token no Keycloak.");
         } finally {
@@ -163,6 +170,16 @@ public class AuthService {
             AuthSession renewed = sessionRepository.findById(sessionId)
                     .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
             return jwtDecoder.decode(renewed.getAccessToken());
+        }
+    }
+
+    private void revogarSessaoLocal(AuthSession session) {
+        sessionRepository.delete(session);
+        eventPublisher.publishEvent(new BffSessionRevokedEvent(session.getSessionId()));
+        try {
+            redis.opsForSet().remove(sessionIndexKey(session.getKeycloakId()), session.getSessionId());
+        } catch (RuntimeException indexFailure) {
+            log.warn("Não foi possível atualizar o índice de sessões após rejeição do refresh token.");
         }
     }
 
