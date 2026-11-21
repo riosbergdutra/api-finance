@@ -30,5 +30,12 @@ jobs:
         run: chmod +x mvnw
       - name: Run tests and verification
         run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+      - name: Validate Nginx configuration syntax
+        run: |
+          docker run --rm --add-host finance-app:127.0.0.1 \
+            -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            nginx:1.27-alpine nginx -t
       - name: Build production container image
         run: docker build --pull --tag financeflow-backend:${{ github.sha }} .
