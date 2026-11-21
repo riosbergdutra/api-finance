@@ -5,7 +5,7 @@ import com.api.finance.openfinance.dto.OpenFinanceConsentResponse;
 import com.api.finance.openfinance.dto.OpenFinanceSyncResponse;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -53,7 +53,7 @@ import java.util.UUID;
 public class OpenFinanceService {
 
     private final SubscriptionService subscriptionService;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
 
     public OpenFinanceConsentResponse iniciarConsentimento(String bankId, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
@@ -109,7 +109,7 @@ public class OpenFinanceService {
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }
