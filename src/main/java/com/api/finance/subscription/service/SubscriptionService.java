@@ -11,8 +11,7 @@ import com.api.finance.subscription.model.PlanType;
 import com.api.finance.subscription.model.Subscription;
 import com.api.finance.subscription.model.SubscriptionStatus;
 import com.api.finance.subscription.repository.SubscriptionRepository;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -49,7 +48,7 @@ public class SubscriptionService {
     private static final int FREE_LIMITE_TRANSACOES_MES = 100;
 
     private final SubscriptionRepository subscriptionRepository;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
     private final NotificationService notificationService;
     private final StripeService stripeService;
     private final ApplicationEventPublisher eventPublisher;  // FIX: publica eventos de domínio, seguindo o mesmo padrão usado em TransactionService/GoalService
@@ -221,7 +220,8 @@ public class SubscriptionService {
      * Extrai o UUID do usuário a partir do AuthenticatedUser.
      */
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return caller.id();
+        return userDirectory.findInternalUserId(caller.id())
+                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 
     /**
@@ -231,8 +231,7 @@ public class SubscriptionService {
      * acabava só persistida no banco, nunca chegando em tempo real ao usuário.
      */
     private String resolveKeycloakId(UUID userId) {
-        return userRepository.findById(userId)
-                .map(User::getKeycloakId)
+        return userDirectory.findIdentityProviderId(userId)
                 .map(Object::toString)
                 .orElse(null);
     }
