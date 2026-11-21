@@ -4,6 +4,7 @@ import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.events.FinanceEvents;
 import com.api.finance.subscription.dto.SubscriptionResponse;
 import com.api.finance.subscription.model.PlanType;
+import com.api.finance.subscription.exception.PlanLimitExceededException;
 import com.api.finance.subscription.model.Subscription;
 import com.api.finance.subscription.model.SubscriptionStatus;
 import com.api.finance.subscription.repository.SubscriptionRepository;
@@ -23,9 +24,11 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -70,7 +73,20 @@ class SubscriptionServiceIdentityTest {
 
         assertEquals(PlanType.FREE, response.plano());
         assertFalse(response.isPro());
+        verify(subscriptionRepository).insertFreeIfAbsent(any(UUID.class), org.mockito.ArgumentMatchers.eq(INTERNAL_USER_ID));
         verify(subscriptionRepository).findByUserId(INTERNAL_USER_ID);
+    }
+
+    @Test
+    void readOnlyPlanChecksTreatMissingSubscriptionAsFreeWithoutCreatingRows() {
+        when(subscriptionRepository.findByUserId(INTERNAL_USER_ID)).thenReturn(Optional.empty());
+
+        assertThrows(PlanLimitExceededException.class,
+                () -> service.assertIsPro(INTERNAL_USER_ID, "Exportação PDF"));
+        assertThrows(PlanLimitExceededException.class,
+                () -> service.assertPodeCriarTransacao(INTERNAL_USER_ID, 100));
+
+        verify(subscriptionRepository, never()).insertFreeIfAbsent(any(UUID.class), any(UUID.class));
     }
 
     @Test
