@@ -16,11 +16,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 
 import static com.api.finance.shared.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,11 +34,17 @@ class DashboardServiceTest {
     @Mock NotificationRepository notificationRepository;
     @Mock GoalRepository goalRepository;
     @Mock UserDirectoryPort userDirectory;
+    @Mock Executor dashboardExecutor;
 
     @InjectMocks DashboardService dashboardService;
 
     @Test
     void getDashboardUsesDatabaseCountInsteadOfLoadingOpenGoals() {
+        doAnswer(invocation -> {
+            invocation.getArgument(0, Runnable.class).run();
+            return null;
+        }).when(dashboardExecutor).execute(any(Runnable.class));
+
         AuthenticatedUser caller = caller();
         given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         given(accountRepository.sumBalanceByUserId(USER_ID)).willReturn(new BigDecimal("1250.00"));
