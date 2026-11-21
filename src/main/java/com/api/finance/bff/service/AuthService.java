@@ -63,8 +63,11 @@ public class AuthService {
     @Value("${spring.security.oauth2.client.registration.keycloak.client-secret}")
     private String clientSecret;
 
-    @Value("${app.keycloak.issuer-uri:${spring.security.oauth2.client.provider.keycloak.issuer-uri:}}")
+    @Value("${app.keycloak.issuer-uri:${spring.security.oauth2.resourceserver.jwt.issuer-uri:}}")
     private String issuerUri;
+
+    @Value("${app.keycloak.backend-uri:${app.keycloak.issuer-uri:${spring.security.oauth2.resourceserver.jwt.issuer-uri:}}}")
+    private String keycloakBackendUri;
 
     @Value("${app.auth.redirect-uri:http://localhost:8080/auth/callback}")
     private String redirectUri;
@@ -347,7 +350,7 @@ public class AuthService {
         }
 
         return restClient.post()
-                .uri(issuerUri + "/protocol/openid-connect/token")
+                .uri(keycloakBackendUri + "/protocol/openid-connect/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(body)
                 .retrieve()
@@ -361,7 +364,7 @@ public class AuthService {
         body.add("refresh_token", refreshToken);
 
         restClient.post()
-                .uri(issuerUri + "/protocol/openid-connect/logout")
+                .uri(keycloakBackendUri + "/protocol/openid-connect/logout")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(body)
                 .retrieve()

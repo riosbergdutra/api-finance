@@ -40,6 +40,9 @@ stripe:
   mode: test
 
 app:
+  keycloak:
+    issuer-uri: ${KEYCLOAK_ISSUER_URI}
+    backend-uri: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_ISSUER_URI}}
   security:
     jwt:
       required-audience: ${KEYCLOAK_API_AUDIENCE}
