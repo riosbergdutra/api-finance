@@ -118,16 +118,20 @@ public class SecurityConfig {
         return registration;
     }
 
+    static OAuth2TokenValidator<Jwt> audienceValidator(String expectedAudience) {
+        return jwt -> jwt.getAudience().contains(expectedAudience)
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "Required API audience is missing.", null));
+    }
+
     @Bean
     public JwtDecoder jwtDecoder() {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withIssuerLocation(issuerUri).build();
         OAuth2TokenValidator<Jwt> issuerAndTimeValidator = JwtValidators.createDefaultWithIssuer(issuerUri);
         OAuth2TokenValidator<Jwt> authorizedPartyValidator = new JwtClaimValidator<>("azp", clientId::equals);
         if (requiredAudience != null && !requiredAudience.isBlank()) {
-            OAuth2TokenValidator<Jwt> audienceValidator = jwt -> jwt.getAudience().contains(requiredAudience)
-                    ? OAuth2TokenValidatorResult.success()
-                    : OAuth2TokenValidatorResult.failure(new OAuth2Error(
-                            "invalid_token", "Required API audience is missing.", null));
+            OAuth2TokenValidator<Jwt> audienceValidator = audienceValidator(requiredAudience);
             decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
                     issuerAndTimeValidator,
                     authorizedPartyValidator,
