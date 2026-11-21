@@ -4,12 +4,10 @@ import com.api.finance.budget.model.Budget;
 import com.api.finance.budget.service.BudgetService;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.service.NotificationService;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.user.application.port.UserIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -39,7 +37,7 @@ public class BudgetAlertScheduler {
 
     private static final int PAGE_SIZE = 100;
 
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
     private final BudgetService budgetService;
     private final NotificationService notificationService;
 
@@ -50,32 +48,31 @@ public class BudgetAlertScheduler {
         int totalUsuariosProcessados = 0;
         int pagina = 0;
 
-        Page<User> paginaAtual;
+        List<UserIdentity> usuarios;
 
         do {
-            paginaAtual = userRepository.findAll(PageRequest.of(pagina, PAGE_SIZE));
-            List<User> usuarios = paginaAtual.getContent();
+            usuarios = userDirectory.findPage(pagina, PAGE_SIZE);
 
-            for (User user : usuarios) {
+            for (UserIdentity user : usuarios) {
                 try {
                     totalAlertas += processarUsuario(user);
                     totalUsuariosProcessados++;
                 } catch (Exception e) {
                     log.error("[Scheduler] Erro ao verificar alertas para userId={}: {}",
-                            user.getId(), e.getMessage());
+                            user.internalUserId(), e.getMessage());
                 }
             }
 
             pagina++;
 
-        } while (paginaAtual.hasNext());
+        } while (usuarios.size() == PAGE_SIZE);
 
         log.info("[Scheduler] Verificação concluída — {} usuários processados, {} alertas disparados",
                 totalUsuariosProcessados, totalAlertas);
     }
 
-    private int processarUsuario(User user) {
-        List<Budget> alertas = budgetService.verificarAlertas(user.getId());
+    private int processarUsuario(UserIdentity user) {
+        List<Budget> alertas = budgetService.verificarAlertas(user.internalUserId());
         int count = 0;
 
         for (Budget budget : alertas) {
@@ -95,8 +92,8 @@ public class BudgetAlertScheduler {
                     pct, categoria, budget.getValorLimite());
 
             notificationService.criarNotificacao(
-                    user.getKeycloakId().toString(),
-                    user.getId(),
+                    user.identityProviderUserId().toString(),
+                    user.internalUserId(),
                     pct >= 100 ? NotificationType.ORCAMENTO_ESTOURADO : NotificationType.ORCAMENTO_PROXIMO,
                     titulo,
                     mensagem,
