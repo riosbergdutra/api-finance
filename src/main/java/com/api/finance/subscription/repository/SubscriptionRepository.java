@@ -18,6 +18,8 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
 
     Optional<Subscription> findByUserId(UUID userId);
 
+    Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
+
     /** Cria FREE apenas se ainda não existir, sem corrida entre requisições concorrentes. */
     @Modifying
     @Query(value = """
