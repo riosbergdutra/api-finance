@@ -164,7 +164,7 @@ public class TransactionService {
     public TransactionResponse atualizar(UUID id, UpdateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Transaction trx = transactionRepository.findByIdAndUserId(id, userId)
+        Transaction trx = transactionRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transação não encontrada: " + id));
 
         boolean previousDestinationApplied = trx.isTransferDestinationApplied();
