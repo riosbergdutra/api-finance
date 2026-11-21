@@ -52,7 +52,7 @@ public class SubscriptionService {
 
     // ── Consulta ─────────────────────────────────────────────────────────
 
-    @Transactional(readOnly = true)
+    @Transactional
     public SubscriptionResponse getMeuPlano(AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
         Subscription sub = getOrCreateFree(userId);
@@ -68,7 +68,7 @@ public class SubscriptionService {
      */
     @Transactional(readOnly = true)
     public void assertPodeCriarConta(UUID userId, long contasAtuais) {
-        if (contasAtuais >= FREE_LIMITE_CONTAS && !getOrCreateFree(userId).isPro()) {
+        if (contasAtuais >= FREE_LIMITE_CONTAS && !isPro(userId)) {
             throw new PlanLimitExceededException(
                     "Plano gratuito permite no máximo " + FREE_LIMITE_CONTAS +
                             " contas. Faça upgrade para o plano PRO.");
@@ -94,7 +94,7 @@ public class SubscriptionService {
      */
     @Transactional(readOnly = true)
     public void assertIsPro(UUID userId, String funcionalidade) {
-        if (!getOrCreateFree(userId).isPro()) {
+        if (!isPro(userId)) {
             throw new PlanLimitExceededException(
                     funcionalidade + " é exclusivo do plano PRO.");
         }
@@ -196,15 +196,17 @@ public class SubscriptionService {
      * Todo usuário começa no FREE no momento do primeiro acesso a este método.
      */
     public Subscription getOrCreateFree(UUID userId) {
+        subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), userId);
         return subscriptionRepository.findByUserId(userId)
-                .orElseGet(() -> {
-                    Subscription nova = Subscription.builder()
-                            .userId(userId)
-                            .plano(PlanType.FREE)
-                            .status(SubscriptionStatus.ACTIVE)
-                            .build();
-                    return subscriptionRepository.save(nova);
-                });
+                .orElseThrow(() -> new IllegalStateException(
+                        "Não foi possível criar ou recuperar a assinatura FREE do usuário."));
+    }
+
+    /** Consultas de autorização são somente leitura: ausência de registro significa FREE. */
+    private boolean isPro(UUID userId) {
+        return subscriptionRepository.findByUserId(userId)
+                .map(Subscription::isPro)
+                .orElse(false);
     }
 
     /**
