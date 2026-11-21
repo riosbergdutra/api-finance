@@ -101,7 +101,7 @@ class TransactionServiceTest {
     @Test
     @DisplayName("buscarPorId: lança TransactionNotFoundException quando não encontrada")
     void buscarPorIdLancaNotFound() {
-        given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+        given(transactionRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> transactionService.buscarPorId(UUID.randomUUID(), caller))
                 .isInstanceOf(TransactionNotFoundException.class);
@@ -305,7 +305,7 @@ class TransactionServiceTest {
                     null, TransactionType.TRANSFERENCIA, TransactionStatus.CONFIRMADA,
                     new BigDecimal("200.00"), "Transferência ajustada", null, LocalDate.now());
 
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID))
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID))
                     .willReturn(Optional.of(transaction));
             given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
                     .willReturn(Optional.of(source));
