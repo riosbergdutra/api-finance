@@ -227,6 +227,27 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void eventoAtivoDoMesmoSegundoNaoPodeSobrescreverEstadoPendente() {
+        Subscription pending = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.FREE)
+                .status(SubscriptionStatus.PENDING_PAYMENT)
+                .stripeSubscriptionId("sub_pending_same_second")
+                .stripeLastEventCreated(600L)
+                .build();
+        when(subscriptionRepository.findByStripeSubscriptionIdForUpdate("sub_pending_same_second"))
+                .thenReturn(Optional.of(pending));
+
+        boolean applied = service.aplicarEventoStripeSubscription(
+                "sub_pending_same_second", INTERNAL_USER_ID, "active",
+                LocalDate.now().plusDays(30), 600L, "evt_active_same_second");
+
+        assertFalse(applied);
+        assertEquals(SubscriptionStatus.PENDING_PAYMENT, pending.getStatus());
+        verify(subscriptionRepository, never()).save(any(Subscription.class));
+    }
+
+    @Test
     void eventoStripeNaoAtivoDeveRevogarProERegistrarTimestamp() {
         Subscription current = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
