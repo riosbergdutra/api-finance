@@ -109,7 +109,7 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(100), "Mercado", "Supermercado X", LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(), anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
@@ -130,7 +130,7 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.RECEITA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(500), "Salário", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
@@ -151,7 +151,7 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.PENDENTE,
                     BigDecimal.valueOf(200), "Fatura", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
@@ -171,7 +171,7 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "Mercado", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(true);
 
             assertThatThrownBy(() -> transactionService.criar(req, caller))
@@ -186,7 +186,7 @@ class TransactionServiceTest {
                     UUID.randomUUID(), null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "X", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(accountRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> transactionService.criar(req, caller))
                     .isInstanceOf(AccountNotFoundException.class);
@@ -200,7 +200,7 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(50), "Padaria", "Padaria Estrela", LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar("Padaria Estrela", USER_ID)).willReturn(Optional.of(cat));
             given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
@@ -227,7 +227,7 @@ class TransactionServiceTest {
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());
 
             given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account)).willReturn(Optional.of(account));
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.save(any())).willReturn(transaction);
 
@@ -247,7 +247,7 @@ class TransactionServiceTest {
         @DisplayName("deleta transação e reverte saldo da conta")
         void deletaEReverteSaldo() {
             given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
 
             transactionService.deletar(TRANSACTION_ID, caller);
 
