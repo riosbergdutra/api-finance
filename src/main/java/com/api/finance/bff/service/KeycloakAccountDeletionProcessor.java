@@ -44,6 +44,7 @@ public class KeycloakAccountDeletionProcessor {
     }
 
     @Scheduled(fixedDelayString = "${app.account-deletion.outbox.poll-interval:30000}")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "keycloakAccountDeletionOutbox", lockAtMostFor = "PT10M", lockAtLeastFor = "PT5S")
     public void processPending() {
         List<UUID> pending = jdbcTemplate.query("""
                 SELECT keycloak_id
