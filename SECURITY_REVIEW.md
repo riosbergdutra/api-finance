@@ -28,6 +28,7 @@ This review separates code changes from external configuration and operational c
 - [x] Dashboard queries use a dedicated bounded executor; exports have a configurable maximum row count.
 - [x] ArchUnit tests enforce key modular-monolith boundaries.
 - [x] Daily schedulers and the Keycloak deletion outbox worker use PostgreSQL-backed ShedLock leases, preventing duplicate execution across application replicas.
+- [x] A multi-stage Java 21 Dockerfile produces a JRE-only runtime image running as a non-root user; CI builds the image after Maven verification.
 
 ## External configuration and release checks still required
 
@@ -40,7 +41,7 @@ This review separates code changes from external configuration and operational c
 - [ ] **Redis operations:** configure managed Redis ACLs, TLS, persistence/backup, memory limits, eviction policy, alerting, and recovery drills. Refresh tokens remain in Redis and Redis is security-critical.
 - [ ] **Scheduler failover rehearsal:** ShedLock now prevents concurrent execution across replicas using PostgreSQL database time. Test lock expiry, process crashes, and recovery in the target deployment.
 - [ ] **Open Finance:** the current service is a stub, not a real aggregator integration. Keep it unavailable in product claims until consent, provider integration, secure token storage, synchronization, and revocation exist.
-- [ ] **Deployment hardening:** provide a production image and deployment manifest, TLS ingress, private database/cache/monitoring networks, non-default credentials, trusted proxy configuration, backup/restore drills, alerting, and incident runbooks. The checked-in Compose and Nginx files are local/example configurations.
+- [ ] **Deployment hardening:** provide the target-platform deployment manifest, TLS ingress, private database/cache/monitoring networks, non-default credentials, trusted proxy configuration, backup/restore drills, alerting, and incident runbooks. The checked-in Compose and Nginx files are local/example configurations.
 - [ ] **Secrets:** rotate credentials previously exposed during development. Never reuse local Compose defaults in production.
 
 ## Release gate
