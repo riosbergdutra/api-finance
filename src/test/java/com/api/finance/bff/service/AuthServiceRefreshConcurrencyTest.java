@@ -72,7 +72,7 @@ class AuthServiceRefreshConcurrencyTest {
         AuthSession rotated = session(sessionId, "new-refresh-token");
 
         when(sessionRepository.findById(sessionId))
-                .thenReturn(Optional.of(observed), Optional.of(rotated));
+                .thenReturn(Optional.of(observed), Optional.of(observed), Optional.of(rotated));
         when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
                 .thenReturn(true);
         when(redis.execute(
@@ -84,7 +84,7 @@ class AuthServiceRefreshConcurrencyTest {
         AuthResponseDTO result = authService.refresh(sessionId);
 
         assertEquals(sessionId, result.sessionId());
-        verify(sessionRepository, org.mockito.Mockito.times(2)).findById(sessionId);
+        verify(sessionRepository, org.mockito.Mockito.times(3)).findById(sessionId);
         verify(sessionRepository, never()).save(any(AuthSession.class));
         verify(restClient, never()).post();
         verify(redis).execute(
