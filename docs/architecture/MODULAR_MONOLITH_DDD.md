@@ -99,7 +99,7 @@ Esses pontos demonstram que a principal dívida arquitetural não é a ausência
 8. Ampliar testes ArchUnit para impedir dependências cruzadas de repositories e entidades JPA.
 9. Executar `./mvnw --batch-mode --no-transfer-progress verify` e validar PostgreSQL/Flyway, Redis/BFF, Keycloak, WebSocket e Stripe Test Mode.
 
-## Testes arquiteturais adicionados
+## Cobertura observada e lacunas\n\nOs 17 arquivos de teste cobrem principalmente Account, Budget, Category, Goal, Notification, Security/BFF, Transaction e User, além do contexto de arquitetura. Não há testes de módulo dedicados identificados para Dashboard, Export, OpenFinance, Scheduler e Subscription/Stripe antes desta migração. A nova suíte `SubscriptionServiceIdentityTest` começa a cobrir o fluxo de identidade e eventos de assinatura. Essas lacunas precisam ser preenchidas antes de refatorar profundamente esses contextos.\n\n## Testes arquiteturais adicionados
 
 `ModularArchitectureTest` começa com regras compatíveis com a estrutura atual:
 
