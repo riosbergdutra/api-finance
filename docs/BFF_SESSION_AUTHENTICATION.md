@@ -28,10 +28,10 @@ FinanceFlow uses a Backend-for-Frontend (BFF) session model. The browser never r
 1. Resolve the Keycloak subject from the authenticated JWT.
 2. Revoke all known BFF Redis sessions and publish WebSocket revocation events.
 3. Cancel any recurring Stripe subscription; if Stripe cannot confirm cancellation, account deletion stops so billing is not silently left active.
-4. Delete the Keycloak identity through a separate confidential service-account client using the Admin REST API.
-5. Delete all local user-owned records and write a hashed identity tombstone plus a durable Keycloak deletion outbox record in one database transaction. The provider identity is deleted immediately when possible; otherwise a scheduled worker retries with backoff.
+4. Delete all local user-owned records and write a hashed identity tombstone plus a durable Keycloak deletion outbox record in one database transaction.
+5. Attempt Keycloak identity deletion through a separate confidential service-account client. If the Admin REST API is unavailable, a scheduled worker retries with backoff.
 
-The deletion endpoint fails closed when Redis or Stripe cannot complete session revocation/billing cancellation. Local financial data erasure, the hashed identity tombstone, and the provider-deletion outbox are committed atomically. The Keycloak Admin API deletion is attempted immediately and retried with exponential backoff after restarts until it succeeds. The tombstone prevents OAuth callback from silently recreating the erased local account while provider deletion is pending. The service account must be configured with only the realm-management `manage-users` role. Do not reuse the browser login client secret.
+The deletion endpoint fails closed when Redis or Stripe cannot complete session revocation/billing cancellation. The recurring Stripe subscription is canceled, but invoices, payment records, and provider-retained customer data may remain under Stripe's legal/financial retention rules; this flow does not claim to erase Stripe's statutory records. Local financial data erasure, the hashed identity tombstone, and the provider-deletion outbox are committed atomically. The Keycloak Admin API deletion is attempted immediately and retried with exponential backoff after restarts until it succeeds. The tombstone prevents OAuth callback from silently recreating the erased local account while provider deletion is pending. The service account must be configured with only the realm-management `manage-users` role. Do not reuse the browser login client secret.
 
 ## Deployment settings
 
