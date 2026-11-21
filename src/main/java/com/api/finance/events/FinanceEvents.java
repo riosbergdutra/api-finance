@@ -95,4 +95,10 @@ public final class FinanceEvents {
             String keycloakId,
             UUID userId
     ) {}
+
+    /** Publicado após o cancelamento da assinatura e commit da transação. */
+    public record AssinaturaCanceladaEvent(
+            String keycloakId,
+            UUID userId
+    ) {}
 }
