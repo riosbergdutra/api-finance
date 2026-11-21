@@ -28,6 +28,12 @@ public class UserDirectoryAdapter implements UserDirectoryPort {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UUID> findIdentityProviderId(UUID internalUserId) {
+        return userRepository.findById(internalUserId).map(User::getKeycloakId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean existsByIdentityProviderId(UUID identityProviderUserId) {
         return userRepository.existsByKeycloakId(identityProviderUserId);
     }
