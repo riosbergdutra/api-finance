@@ -13,6 +13,7 @@ The production profile uses Hibernate `validate` and enables Flyway. Flyway migr
 - `V3`: composite query indexes and uniqueness for general budgets.
 - `V4`: durable Stripe webhook inbox with event-ID uniqueness.
 - `V5`: tracks whether a transfer's destination account balance was credited, preserving safe reversal of historical transfers.
+- `V6`: enforces one local owner per non-null Stripe subscription ID; migration stops if legacy duplicates require reconciliation.
 
 For a new production database, Flyway applies the migrations in order. For an existing database, first inspect `flyway_schema_history` and compare the real schema with the migration history. Do not baseline an existing database or mark migrations as applied without reviewing the actual schema and data. Take and verify a backup before the first production migration.
 
