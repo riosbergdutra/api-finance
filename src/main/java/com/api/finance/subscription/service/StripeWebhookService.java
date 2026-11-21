@@ -143,15 +143,16 @@ public class StripeWebhookService {
                 log.warn("[Stripe] Não foi possível ler currentPeriodEnd da subscription={}: {}", stripeSub.getId(), ex.getMessage());
             }
 
-            LocalDate fim;
-            if (periodEnd != null) {
-                fim = Instant.ofEpochSecond(periodEnd)
-                        .atZone(ZoneId.systemDefault()).toLocalDate();
-            } else {
-                // Fallback: 30 dias a partir de hoje se não conseguir ler o período
-                fim = LocalDate.now().plusDays(30);
-                log.warn("[Stripe] currentPeriodEnd nulo, usando fallback de 30 dias. subscription={}", stripeSub.getId());
+            if (periodEnd == null) {
+                // Não conceder período PRO estimado quando o Stripe não informa
+                // a data real. O erro propaga para o controller e permite retry.
+                throw new IllegalStateException(
+                        "Stripe não informou currentPeriodEnd para a subscription " + stripeSub.getId() + ".");
             }
+
+            LocalDate fim = Instant.ofEpochSecond(periodEnd)
+                    .atZone(java.time.ZoneOffset.UTC)
+                    .toLocalDate();
 
             LocalDate inicio = LocalDate.now();
             subscriptionService.ativarPro(userId, null, stripeSub.getId(), inicio, fim);
