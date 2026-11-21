@@ -15,6 +15,7 @@ The production profile uses Hibernate `validate` and enables Flyway. Migrations 
 - `V5`: tracks whether historical transfer destination balances were credited.
 - `V6`: enforces one local owner per non-null Stripe subscription ID; stops if legacy duplicates require reconciliation.
 - `V7`: stores the latest applied Stripe subscription event timestamp and ID to prevent older webhook deliveries from overwriting newer subscription state.
+- `V8`: adds a durable Keycloak account-deletion outbox and hashed identity tombstones to prevent erased users from being silently recreated.
 
 For an existing database, inspect `flyway_schema_history` and compare the actual schema before deployment. Take and verify a backup before applying migrations. Do not baseline or mark migrations as applied without reviewing real data.
 
