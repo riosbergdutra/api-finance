@@ -45,7 +45,7 @@ com.api.finance
 
 A estrutura é uma direção, não uma exigência de criar pastas vazias. MVC continua na apresentação: Controller -> Application Service -> Domain/Ports. A implementação de persistência fica em infrastructure.
 
-## Inventário técnico inicial (branch hardening/production-readiness)
+## Inventário técnico (branch hardening/production-readiness)\n\nA árvore Git completa foi enumerada: 288 caminhos no repositório, 117 arquivos Java em produção e 17 arquivos Java de teste. Os pacotes de negócio encontrados incluem account, bff, budget, category, dashboard, export, goal, notification, openfinance, scheduler, subscription, transaction e user; além de config, security, shared e events. A enumeração é completa para a árvore deste commit; a leitura semântica detalhada de todos os 117 arquivos ainda é uma atividade de revisão em andamento.
 
 ### Plataforma e integrações confirmadas
 
