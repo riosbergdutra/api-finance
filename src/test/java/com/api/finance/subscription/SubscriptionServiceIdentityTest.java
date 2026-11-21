@@ -182,6 +182,78 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void eventoStripeAntigoNaoPodeSobrescreverEstadoMaisRecente() {
+        Subscription current = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.FREE)
+                .status(SubscriptionStatus.CANCELLED)
+                .stripeSubscriptionId("sub_ordered")
+                .stripeLastEventCreated(200L)
+                .stripeLastEventId("evt_new")
+                .build();
+        when(subscriptionRepository.findByStripeSubscriptionIdForUpdate("sub_ordered"))
+                .thenReturn(Optional.of(current));
+
+        boolean applied = service.aplicarEventoStripeSubscription(
+                "sub_ordered", INTERNAL_USER_ID, "active",
+                LocalDate.now().plusDays(30), 199L, "evt_old");
+
+        assertFalse(applied);
+        assertEquals(PlanType.FREE, current.getPlano());
+        verify(subscriptionRepository, never()).save(any(Subscription.class));
+    }
+
+    @Test
+    void eventoStripeNaoAtivoDeveRevogarProERegistrarTimestamp() {
+        Subscription current = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.PRO)
+                .status(SubscriptionStatus.ACTIVE)
+                .fimPeriodo(LocalDate.now().plusDays(30))
+                .stripeSubscriptionId("sub_cancel")
+                .stripeLastEventCreated(100L)
+                .build();
+        when(subscriptionRepository.findByStripeSubscriptionIdForUpdate("sub_cancel"))
+                .thenReturn(Optional.of(current));
+        when(userDirectory.findIdentityProviderId(INTERNAL_USER_ID))
+                .thenReturn(Optional.of(KEYCLOAK_ID));
+
+        boolean applied = service.aplicarEventoStripeSubscription(
+                "sub_cancel", INTERNAL_USER_ID, "canceled", null, 201L, "evt_cancel");
+
+        assertTrue(applied);
+        assertEquals(PlanType.FREE, current.getPlano());
+        assertEquals(SubscriptionStatus.CANCELLED, current.getStatus());
+        assertEquals(201L, current.getStripeLastEventCreated());
+        assertEquals("evt_cancel", current.getStripeLastEventId());
+        verify(subscriptionRepository).save(current);
+    }
+
+    @Test
+    void eventoStripeAtivoDeveAtualizarPeriodoEConcederPro() {
+        Subscription current = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.FREE)
+                .status(SubscriptionStatus.ACTIVE)
+                .stripeSubscriptionId("sub_active")
+                .build();
+        LocalDate end = LocalDate.now().plusDays(30);
+        when(subscriptionRepository.findByStripeSubscriptionIdForUpdate("sub_active"))
+                .thenReturn(Optional.of(current));
+        when(userDirectory.findIdentityProviderId(INTERNAL_USER_ID))
+                .thenReturn(Optional.of(KEYCLOAK_ID));
+
+        boolean applied = service.aplicarEventoStripeSubscription(
+                "sub_active", INTERNAL_USER_ID, "active", end, 300L, "evt_active");
+
+        assertTrue(applied);
+        assertEquals(PlanType.PRO, current.getPlano());
+        assertEquals(SubscriptionStatus.ACTIVE, current.getStatus());
+        assertEquals(end, current.getFimPeriodo());
+        verify(subscriptionRepository).save(current);
+    }
+
+    @Test
     void ativarProMustResolveKeycloakIdFromInternalUserIdForDomainEvent() {
         Subscription free = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
