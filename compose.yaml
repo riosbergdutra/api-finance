@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_DB: finance
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password}
+      POSTGRES_PASSWORD: password
     ports:
-      - "127.0.0.1:5432:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,22 +16,18 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: redis-finance
-    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - redis_data:/data
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
+    restart: always
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
@@ -41,7 +37,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/finance
       KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: ${DATABASE_PASSWORD:-password}
+      KC_DB_PASSWORD: password
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
@@ -50,7 +46,7 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
-      - "127.0.0.1:8180:8080"
+      - "8180:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,11 +63,12 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       DATABASE_URL: jdbc:postgresql://postgres:5432/finance
       DATABASE_USERNAME: postgres
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-password}
+      DATABASE_PASSWORD: password
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KEYCLOAK_ISSUER_URI: http://localhost:8180/realms/bff-codeflow
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/bff-codeflow/protocol/openid-connect/certs
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-bff-codeflow}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-dev-only-change-me}
       STRIPE_API_KEY: ${STRIPE_API_KEY:-sk_test_dev_placeholder}
@@ -84,7 +81,7 @@ services:
       COOKIE_SECURE: "false"
       JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:InitialRAMPercentage=20.0 -XX:MaxRAMPercentage=75.0"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,7 +103,7 @@ services:
     image: nginx:1.27-alpine
     container_name: nginx-finance
     ports:
-      - "127.0.0.1:80:80"
+      - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -115,12 +112,12 @@ services:
     restart: unless-stopped
 
   redis-exporter:
-    image: oliver006/redis_exporter:v1.67.0
+    image: oliver006/redis_exporter:latest
     container_name: redis-exporter-finance
     environment:
       REDIS_ADDR: redis://redis:6379
     ports:
-      - "127.0.0.1:9121:9121"
+      - "9121:9121"
     depends_on:
       redis:
         condition: service_healthy
@@ -132,7 +129,7 @@ services:
     command:
       - --nginx.scrape-uri=http://nginx/nginx_status
     ports:
-      - "127.0.0.1:9113:9113"
+      - "9113:9113"
     depends_on:
       nginx:
         condition: service_started
@@ -142,7 +139,7 @@ services:
     image: prom/prometheus:v2.52.0
     container_name: prometheus-finance
     ports:
-      - "127.0.0.1:9090:9090"
+      - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -162,10 +159,10 @@ services:
     image: grafana/grafana:11.0.0
     container_name: grafana-finance
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
@@ -177,6 +174,5 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   prometheus_data:
   grafana_data:
