@@ -2,8 +2,6 @@ package com.api.finance.subscription.service;
 
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.events.FinanceEvents;
-import com.api.finance.notification.model.NotificationType;
-import com.api.finance.notification.service.NotificationService;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.dto.SubscriptionResponse;
 import com.api.finance.subscription.exception.PlanLimitExceededException;
@@ -49,7 +47,6 @@ public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final UserDirectoryPort userDirectory;
-    private final NotificationService notificationService;
     private final StripeService stripeService;
     private final ApplicationEventPublisher eventPublisher;  // FIX: publica eventos de domínio, seguindo o mesmo padrão usado em TransactionService/GoalService
 
@@ -167,13 +164,7 @@ public class SubscriptionService {
         // separados, e o keycloakId real é resolvido (antes era passado null, então
         // a notificação nunca chegava via WebSocket, só ficava persistida).
         String keycloakId = resolveKeycloakId(userId);
-        notificationService.criarNotificacao(
-                keycloakId,
-                userId,
-                NotificationType.SUBSCRIPTION_CANCELED,
-                "Assinatura PRO cancelada",
-                "Sua assinatura PRO foi cancelada. Você voltou ao plano FREE."
-        );
+        eventPublisher.publishEvent(new FinanceEvents.AssinaturaCanceladaEvent(keycloakId, userId));
     }
 
     /**
