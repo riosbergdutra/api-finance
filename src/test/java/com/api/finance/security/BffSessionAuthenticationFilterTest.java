@@ -49,14 +49,14 @@ class BffSessionAuthenticationFilterTest {
     @Test
     void deveAutenticarComCookieDeSessaoValido() throws ServletException, IOException {
         MockHttpServletRequest request = request("/api/users/me");
-        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "opaque-session-id"));
+        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "123e4567-e89b-12d3-a456-426614174000"));
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
         Jwt jwt = Jwt.withTokenValue("test-access-token")
                 .header("alg", "none")
                 .subject("user-123")
                 .build();
-        when(authService.autenticarSessao("opaque-session-id")).thenReturn(jwt);
+        when(authService.autenticarSessao("123e4567-e89b-12d3-a456-426614174000")).thenReturn(jwt);
 
         filter.doFilter(request, response, chain);
 
@@ -64,18 +64,18 @@ class BffSessionAuthenticationFilterTest {
         assertTrue(SecurityContextHolder.getContext().getAuthentication().isAuthenticated());
         assertEquals(200, response.getStatus());
         assertNotNull(chain.getRequest());
-        verify(authService).autenticarSessao("opaque-session-id");
+        verify(authService).autenticarSessao("123e4567-e89b-12d3-a456-426614174000");
     }
 
     @Test
     void deveResponder401QuandoSessaoForInvalida() throws ServletException, IOException {
         MockHttpServletRequest request = request("/api/users/me");
-        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "invalid-session"));
+        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "123e4567-e89b-12d3-a456-426614174001"));
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (req, res) -> {
             throw new AssertionError("A cadeia não deveria continuar para uma sessão inválida.");
         };
-        when(authService.autenticarSessao("invalid-session"))
+        when(authService.autenticarSessao("123e4567-e89b-12d3-a456-426614174001"))
                 .thenThrow(new SessionNotFoundException("invalid"));
 
         filter.doFilter(request, response, chain);
@@ -87,12 +87,12 @@ class BffSessionAuthenticationFilterTest {
     @Test
     void deveResponder503QuandoOProvedorDeAutenticacaoEstiverIndisponivel() throws ServletException, IOException {
         MockHttpServletRequest request = request("/api/users/me");
-        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "opaque-session-id"));
+        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "123e4567-e89b-12d3-a456-426614174000"));
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (req, res) -> {
             throw new AssertionError("A cadeia não deveria continuar durante indisponibilidade de autenticação.");
         };
-        when(authService.autenticarSessao("opaque-session-id"))
+        when(authService.autenticarSessao("123e4567-e89b-12d3-a456-426614174000"))
                 .thenThrow(new AuthIntegrationException("provider unavailable"));
 
         filter.doFilter(request, response, chain);
@@ -104,7 +104,7 @@ class BffSessionAuthenticationFilterTest {
     void naoDeveConsultarSessaoEmEndpointDeRefresh() throws ServletException, IOException {
         MockHttpServletRequest request = request("/auth/refresh");
         request.setMethod("POST");
-        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "opaque-session-id"));
+        request.setCookies(new jakarta.servlet.http.Cookie("SESSION_ID", "123e4567-e89b-12d3-a456-426614174000"));
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
@@ -112,7 +112,7 @@ class BffSessionAuthenticationFilterTest {
 
         assertEquals(200, response.getStatus());
         assertNotNull(chain.getRequest());
-        verify(authService, never()).autenticarSessao("opaque-session-id");
+        verify(authService, never()).autenticarSessao("123e4567-e89b-12d3-a456-426614174000");
     }
 
     @Test
