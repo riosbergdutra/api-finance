@@ -7,6 +7,7 @@ import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
 import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.subscription.application.port.in.SubscriptionAccountDeletionPort;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.SetOperations;
@@ -40,6 +41,8 @@ class AuthServiceAccountDeletionTest {
         AuthenticatedUserProvider userProvider = mock(AuthenticatedUserProvider.class);
         var events = mock(org.springframework.context.ApplicationEventPublisher.class);
         KeycloakAdminClient admin = mock(KeycloakAdminClient.class);
+        SubscriptionAccountDeletionPort subscriptionDeletion = mock(SubscriptionAccountDeletionPort.class);
+        UUID internalUserId = UUID.randomUUID();
 
         when(sessions.findAllByKeycloakId(keycloakId.toString())).thenReturn(List.of(first, second));
         when(sessions.findAll()).thenReturn(List.of(first, second, legacy));
@@ -50,6 +53,7 @@ class AuthServiceAccountDeletionTest {
         when(setOperations.members("auth:user-sessions:" + keycloakId))
                 .thenReturn(Set.of("session-1", "session-2"));
         when(userProvider.get(any(Jwt.class))).thenReturn(new AuthenticatedUser(keycloakId));
+        when(users.findInternalUserId(keycloakId)).thenReturn(Optional.of(internalUserId));
 
         AuthService service = new AuthService(
                 mock(org.springframework.web.client.RestClient.class),
@@ -60,7 +64,7 @@ class AuthServiceAccountDeletionTest {
                 mock(org.springframework.security.oauth2.jwt.JwtDecoder.class),
                 userProvider,
                 events,
-                mock(SubscriptionAccountDeletionPort.class),
+                subscriptionDeletion,
                 admin
         );
 
@@ -73,6 +77,7 @@ class AuthServiceAccountDeletionTest {
         verify(sessions).delete(first);
         verify(sessions).delete(second);
         verify(sessions).delete(legacy);
+        verify(subscriptionDeletion).cancelarParaExclusao(internalUserId);
         verify(admin).deleteUser(keycloakId);
         verify(users).deleteByIdentityProviderId(keycloakId);
         verify(events, org.mockito.Mockito.times(3)).publishEvent(any(BffSessionRevokedEvent.class));
