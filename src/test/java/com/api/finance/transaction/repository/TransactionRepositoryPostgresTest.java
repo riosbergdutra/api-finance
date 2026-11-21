@@ -113,7 +113,8 @@ class TransactionRepositoryPostgresTest {
                 "Compra de teste",
                 "Loja de teste",
                 LocalDate.of(2026, 11, 20),
-                fingerprint
+                fingerprint,
+                false
         );
     }
 }
