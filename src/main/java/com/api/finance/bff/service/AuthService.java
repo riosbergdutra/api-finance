@@ -210,6 +210,14 @@ public class AuthService {
         // @Indexed também permite localizar sessões persistidas pelo Spring Data.
         java.util.Set<String> sessionIds = new java.util.HashSet<>();
         sessionRepository.findAllByKeycloakId(identity).forEach(s -> sessionIds.add(s.getSessionId()));
+        // Redis secondary indexes are not backfilled for sessions created before
+        // this release. Account deletion is rare, so scan remaining session
+        // records once to guarantee legacy sessions are also discovered.
+        for (AuthSession stored : sessionRepository.findAll()) {
+            if (identity.equals(stored.getKeycloakId())) {
+                sessionIds.add(stored.getSessionId());
+            }
+        }
         java.util.Set<String> indexedIds = redis.opsForSet().members(sessionIndexKey(identity));
         if (indexedIds != null) {
             sessionIds.addAll(indexedIds);
