@@ -20,6 +20,7 @@ This file tracks verified code-level risks that remain before a public productio
 - [x] Configure explicit RestClient connect/read timeouts and a bounded HikariCP pool.
 - [x] Serialize concurrent balance changes on the same account with a PostgreSQL pessimistic row lock.
 - [x] Apply confirmed transfers to both source and destination accounts in one database transaction; lock both accounts in deterministic order, reject self/cross-currency/inactive destinations, and reverse both sides on update/delete. A V5 flag preserves the behavior of historical transfers during reversal.
+- [x] Enforce uniqueness of non-null Stripe subscription IDs in PostgreSQL so a deletion webhook cannot ambiguously target multiple local users (V6).
 - [x] Bound Excel/PDF exports by a configurable maximum row count and return HTTP 413 instead of loading an unbounded number of transactions.
 - [x] Add composite indexes for transaction date-range queries, goal deadlines, subscription expiration, active accounts, and monthly budgets.
 - [x] Enforce one general budget per user/month/year with a partial unique index; migration fails safely if legacy duplicates need manual reconciliation.
@@ -27,6 +28,7 @@ This file tracks verified code-level risks that remain before a public productio
 
 ## Must be resolved before public production launch
 
+- [ ] **Subscription data reconciliation:** V6 fails safely if a Stripe subscription ID is duplicated in legacy rows. Inspect and reconcile those records before deployment if the migration reports duplicates.
 - [ ] **Historical transfer reconciliation:** V5 deliberately marks old transfers as not having credited their destination, because that is what the previous code did. Review existing transfer records and account balances before any backfill; do not automatically credit historical destinations without reconciling the ledger and confirming the intended accounting policy.
 - [ ] **Account deletion and privacy:** verify foreign-key cascades and permanently remove all user-owned data according to the retention policy. The current flow deletes the local user row and logs out only the supplied session; it does not invalidate every Redis session or delete/disable the Keycloak identity.
 - [ ] **JWT authorization:** review issuer, audience, authorized-party, role/scope, and token-expiry validation. Confirm every business endpoint is protected and that no endpoint accidentally trusts a client-supplied user ID.
