@@ -74,6 +74,27 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void cancelarAssinaturaMustPublishNotificationEventAfterSuccessfulOperation() {
+        Subscription pro = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.PRO)
+                .status(SubscriptionStatus.ACTIVE)
+                .build();
+
+        when(subscriptionRepository.findByUserId(INTERNAL_USER_ID)).thenReturn(Optional.of(pro));
+        when(userDirectory.findIdentityProviderId(INTERNAL_USER_ID)).thenReturn(Optional.of(KEYCLOAK_ID));
+
+        service.cancelarSubscricao(INTERNAL_USER_ID);
+
+        verify(subscriptionRepository).save(pro);
+        verify(eventPublisher).publishEvent(argThat(event ->
+                event instanceof FinanceEvents.AssinaturaCanceladaEvent canceled
+                        && KEYCLOAK_ID.toString().equals(canceled.keycloakId())
+                        && INTERNAL_USER_ID.equals(canceled.userId())
+        ));
+    }
+
+    @Test
     void ativarProMustResolveKeycloakIdFromInternalUserIdForDomainEvent() {
         Subscription free = Subscription.builder()
                 .userId(INTERNAL_USER_ID)
