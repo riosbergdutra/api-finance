@@ -63,6 +63,7 @@ resilience4j:
         # Exceções que NÃO contam como falha (ex: 401 é problema do cliente)
         ignore-exceptions:
           - org.springframework.security.access.AccessDeniedException
+          - com.api.finance.bff.exceptions.SessionNotFoundException
   retry:
     instances:
       keycloak:
