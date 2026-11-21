@@ -13,6 +13,8 @@ public interface GoalRepository extends JpaRepository<Goal, UUID> {
 
     List<Goal> findByUserIdAndConcluidaFalse(UUID userId);
 
+    long countByUserIdAndConcluidaFalse(UUID userId);
+
     List<Goal> findByUserId(UUID userId);
 
     Optional<Goal> findByIdAndUserId(UUID id, UUID userId);
