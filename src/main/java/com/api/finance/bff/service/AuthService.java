@@ -39,6 +39,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.util.UUID;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -86,10 +87,11 @@ public class AuthService {
             nome = email != null ? email.split("@")[0] : "Usuário";
         }
 
-        garantirExistenciaUsuario(keycloakId, email, nome);
-        String sessionId = criarSessaoNoRedis(response.accessToken(), response.refreshToken(), keycloakId);
-
-        return new AuthResponseDTO(sessionId);
+        return withIdentityLock(keycloakId, () -> {
+            garantirExistenciaUsuario(keycloakId, email, nome);
+            String sessionId = criarSessaoNoRedis(response.accessToken(), response.refreshToken(), keycloakId);
+            return new AuthResponseDTO(sessionId);
+        });
     }
 
     private void garantirExistenciaUsuario(String keycloakId, String email, String nome) {
@@ -98,6 +100,13 @@ public class AuthService {
 
     @CircuitBreaker(name = "keycloak", fallbackMethod = "refreshFallback")
     public AuthResponseDTO refresh(String sessionId) {
+        AuthSession observed = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
+        return withIdentityLock(observed.getKeycloakId(),
+                () -> refreshWithinIdentityLock(sessionId));
+    }
+
+    private AuthResponseDTO refreshWithinIdentityLock(String sessionId) {
         AuthSession observed = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
         String lockKey = "auth:refresh-lock:" + sessionId;
@@ -117,8 +126,6 @@ public class AuthService {
                 Thread.sleep(100);
             }
 
-            // Re-read only after acquiring the distributed lock. Another node may
-            // already have rotated the refresh token while this request was waiting.
             AuthSession current = sessionRepository.findById(sessionId)
                     .orElseThrow(() -> new SessionNotFoundException("Sessão inválida ou expirada."));
             if (!Objects.equals(observed.getRefreshToken(), current.getRefreshToken())) {
@@ -139,7 +146,7 @@ public class AuthService {
             throw known;
         } catch (RestClientResponseException providerResponse) {
             if (providerResponse.getResponseBodyAsString().contains("invalid_grant")) {
-                revogarSessaoLocal(current);
+                revogarSessaoLocal(observed);
                 throw new SessionNotFoundException("Sessão inválida ou expirada.");
             }
             throw new AuthIntegrationException("O provedor de autenticação não conseguiu renovar a sessão.");
@@ -150,7 +157,6 @@ public class AuthService {
                 try {
                     redis.execute(releaseScript, List.of(lockKey), lockValue);
                 } catch (RuntimeException releaseFailure) {
-                    // The lock has a short TTL; never expose its value or session identifier.
                     log.warn("Não foi possível liberar imediatamente o lock de renovação; ele expirará automaticamente.");
                 }
             }
@@ -195,43 +201,49 @@ public class AuthService {
      * revocation is best-effort; deleting the local session is mandatory.
      */
     public void logout(String sessionId) {
-        AuthSession session = sessionRepository.findById(sessionId).orElse(null);
-        if (session == null) {
+        AuthSession observed = sessionRepository.findById(sessionId).orElse(null);
+        if (observed == null) {
             return;
         }
 
-        // Revoke the local BFF session before making a network call. A slow or
-        // unavailable Keycloak must never keep the browser session usable.
-        sessionRepository.delete(session);
-        eventPublisher.publishEvent(new BffSessionRevokedEvent(sessionId));
-        try {
-            redis.opsForSet().remove(sessionIndexKey(session.getKeycloakId()), sessionId);
-        } catch (RuntimeException indexFailure) {
-            log.warn("Não foi possível atualizar o índice de sessões após logout; a sessão já foi removida.");
-        }
+        withIdentityLock(observed.getKeycloakId(), () -> {
+            AuthSession session = sessionRepository.findById(sessionId).orElse(null);
+            if (session == null) {
+                return null;
+            }
 
-        try {
-            revogarNoKeycloak(session.getRefreshToken());
-        } catch (Exception e) {
-            // Local revocation is authoritative; remote revocation is best-effort.
-            // Never log the opaque session id or any OAuth credential.
-            log.warn("Falha ao revogar token no Keycloak durante logout; sessão BFF já foi invalidada.");
-        }
+            sessionRepository.delete(session);
+            eventPublisher.publishEvent(new BffSessionRevokedEvent(sessionId));
+            try {
+                redis.opsForSet().remove(sessionIndexKey(session.getKeycloakId()), sessionId);
+            } catch (RuntimeException indexFailure) {
+                log.warn("Não foi possível atualizar o índice de sessões após logout; a sessão já foi removida.");
+            }
+
+            try {
+                revogarNoKeycloak(session.getRefreshToken());
+            } catch (Exception e) {
+                log.warn("Falha ao revogar token no Keycloak durante logout; sessão BFF já foi invalidada.");
+            }
+            return null;
+        });
     }
 
     public void processarExclusaoConta(Jwt jwt, String sessionId, HttpServletResponse response) {
         AuthenticatedUser user = userprovider.get(jwt);
         UUID keycloakId = user.id();
-        String identity = keycloakId.toString();
+        withIdentityLock(keycloakId.toString(), () -> {
+            revogarTodasSessoesEApagarConta(keycloakId, sessionId);
+            return null;
+        });
+    }
 
-        // Revoga todas as sessões BFF conhecidas antes de remover a identidade.
-        // O índice explícito cobre sessões criadas nesta versão; o índice Redis
-        // @Indexed também permite localizar sessões persistidas pelo Spring Data.
+    private void revogarTodasSessoesEApagarConta(UUID keycloakId, String currentSessionId) {
+        String identity = keycloakId.toString();
         java.util.Set<String> sessionIds = new java.util.HashSet<>();
         sessionRepository.findAllByKeycloakId(identity).forEach(s -> sessionIds.add(s.getSessionId()));
         // Redis secondary indexes are not backfilled for sessions created before
-        // this release. Account deletion is rare, so scan remaining session
-        // records once to guarantee legacy sessions are also discovered.
+        // this release. Account deletion is rare, so scan remaining session records once.
         for (AuthSession stored : sessionRepository.findAll()) {
             if (identity.equals(stored.getKeycloakId())) {
                 sessionIds.add(stored.getSessionId());
@@ -241,8 +253,8 @@ public class AuthService {
         if (indexedIds != null) {
             sessionIds.addAll(indexedIds);
         }
-        if (sessionId != null && !sessionId.isBlank()) {
-            sessionIds.add(sessionId);
+        if (currentSessionId != null && !currentSessionId.isBlank()) {
+            sessionIds.add(currentSessionId);
         }
 
         for (String id : sessionIds) {
@@ -251,17 +263,13 @@ public class AuthService {
         }
         redis.delete(sessionIndexKey(identity));
 
-        // Cancela cobrança recorrente antes de apagar a assinatura local. Se o
-        // Stripe estiver indisponível, a exclusão é interrompida para não deixar
-        // uma cobrança ativa sem conta correspondente.
         userDirectory.findInternalUserId(keycloakId)
                 .ifPresent(subscriptionAccountDeletion::cancelarParaExclusao);
 
-        // A exclusão local e a criação da solicitação durável são atômicas.
-        // Se o Admin API estiver indisponível, o outbox retenta sem recriar a conta.
+        // The local erasure, pseudonymous tombstone, and provider-deletion outbox
+        // are committed atomically. The worker retries Keycloak after this method.
         userDirectory.deleteByIdentityProviderId(keycloakId);
         accountDeletionProcessor.processOne(keycloakId);
-
         log.info("Dados locais removidos e exclusão da identidade encaminhada para processamento durável.");
     }
 
@@ -278,6 +286,42 @@ public class AuthService {
         redis.opsForSet().add(indexKey, sessionId);
         redis.expire(indexKey, java.time.Duration.ofDays(30));
         return sessionId;
+    }
+
+    /**
+     * Serializes login/session creation, refresh, logout, and account erasure for
+     * one identity. This prevents refresh or OAuth callback from recreating a
+     * Redis session after account-wide revocation has already scanned sessions.
+     */
+    private <T> T withIdentityLock(String keycloakId, Supplier<T> operation) {
+        String lockKey = "auth:identity-lifecycle-lock:" + keycloakId;
+        String lockValue = UUID.randomUUID().toString();
+        DefaultRedisScript<Long> releaseScript = new DefaultRedisScript<>(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                Long.class);
+        boolean acquired = false;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+        try {
+            while (!(acquired = Boolean.TRUE.equals(
+                    redis.opsForValue().setIfAbsent(lockKey, lockValue, java.time.Duration.ofMinutes(10))))) {
+                if (System.nanoTime() >= deadline) {
+                    throw new AuthIntegrationException("Operação de sessão concorrente; tente novamente.");
+                }
+                Thread.sleep(100);
+            }
+            return operation.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AuthIntegrationException("Operação de sessão interrompida.");
+        } finally {
+            if (acquired) {
+                try {
+                    redis.execute(releaseScript, List.of(lockKey), lockValue);
+                } catch (RuntimeException releaseFailure) {
+                    log.warn("Não foi possível liberar o lock de ciclo de vida da sessão; ele expirará automaticamente.");
+                }
+            }
+        }
     }
 
     private String sessionIndexKey(String keycloakId) {
