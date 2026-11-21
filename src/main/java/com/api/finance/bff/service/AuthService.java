@@ -12,6 +12,7 @@ import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
 import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.subscription.application.port.in.SubscriptionAccountDeletionPort;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -50,6 +51,7 @@ public class AuthService {
     private final StringRedisTemplate redis;
     private final OAuthLoginAttemptStore loginAttemptStore;
     private final UserDirectoryPort userDirectory;
+    private final SubscriptionAccountDeletionPort subscriptionAccountDeletion;
     private final JwtDecoder jwtDecoder;
     private final AuthenticatedUserProvider userprovider;
     private final ApplicationEventPublisher eventPublisher;
@@ -231,6 +233,12 @@ public class AuthService {
             eventPublisher.publishEvent(new BffSessionRevokedEvent(id));
         }
         redis.delete(sessionIndexKey(identity));
+
+        // Cancela cobrança recorrente antes de apagar a assinatura local. Se o
+        // Stripe estiver indisponível, a exclusão é interrompida para não deixar
+        // uma cobrança ativa sem conta correspondente.
+        userDirectory.findInternalUserId(keycloakId)
+                .ifPresent(subscriptionAccountDeletion::cancelarParaExclusao);
 
         // A operação remota é idempotente. Se Keycloak/Redis estiver indisponível,
         // não apagamos os dados locais parcialmente: o cliente recebe falha e pode
