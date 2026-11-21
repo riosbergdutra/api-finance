@@ -7,6 +7,7 @@ import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.model.AuthSession;
 import com.api.finance.bff.dto.AuthResponseDTO;
 import com.api.finance.bff.repository.AuthSessionRepository;
+import com.api.finance.bff.service.KeycloakAdminClient;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.config.AuthenticatedUserProvider;
@@ -15,7 +16,6 @@ import com.api.finance.user.application.port.UserDirectoryPort;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +46,7 @@ public class AuthService {
 
     private final RestClient restClient;
     private final AuthSessionRepository sessionRepository;
+    private final KeycloakAdminClient keycloakAdminClient;
     private final StringRedisTemplate redis;
     private final OAuthLoginAttemptStore loginAttemptStore;
     private final UserDirectoryPort userDirectory;
@@ -179,6 +180,11 @@ public class AuthService {
         // unavailable Keycloak must never keep the browser session usable.
         sessionRepository.delete(session);
         eventPublisher.publishEvent(new BffSessionRevokedEvent(sessionId));
+        try {
+            redis.opsForSet().remove(sessionIndexKey(session.getKeycloakId()), sessionId);
+        } catch (RuntimeException indexFailure) {
+            log.warn("Não foi possível atualizar o índice de sessões após logout; a sessão já foi removida.");
+        }
 
         try {
             revogarNoKeycloak(session.getRefreshToken());
@@ -189,18 +195,37 @@ public class AuthService {
         }
     }
 
-    @Transactional
     public void processarExclusaoConta(Jwt jwt, String sessionId, HttpServletResponse response) {
         AuthenticatedUser user = userprovider.get(jwt);
         UUID keycloakId = user.id();
+        String identity = keycloakId.toString();
 
-        userDirectory.deleteByIdentityProviderId(keycloakId);
-
-        if (sessionId != null) {
-            this.logout(sessionId);
+        // Revoga todas as sessões BFF conhecidas antes de remover a identidade.
+        // O índice explícito cobre sessões criadas nesta versão; o índice Redis
+        // @Indexed também permite localizar sessões persistidas pelo Spring Data.
+        java.util.Set<String> sessionIds = new java.util.HashSet<>();
+        sessionRepository.findAllByKeycloakId(identity).forEach(s -> sessionIds.add(s.getSessionId()));
+        java.util.Set<String> indexedIds = redis.opsForSet().members(sessionIndexKey(identity));
+        if (indexedIds != null) {
+            sessionIds.addAll(indexedIds);
+        }
+        if (sessionId != null && !sessionId.isBlank()) {
+            sessionIds.add(sessionId);
         }
 
-        log.info("Fluxo de exclusão concluído para o usuário: {}", user.id());
+        for (String id : sessionIds) {
+            sessionRepository.findById(id).ifPresent(session -> sessionRepository.delete(session));
+            eventPublisher.publishEvent(new BffSessionRevokedEvent(id));
+        }
+        redis.delete(sessionIndexKey(identity));
+
+        // A operação remota é idempotente. Se Keycloak/Redis estiver indisponível,
+        // não apagamos os dados locais parcialmente: o cliente recebe falha e pode
+        // repetir a exclusão depois de restabelecida a integração.
+        keycloakAdminClient.deleteUser(keycloakId);
+        userDirectory.deleteByIdentityProviderId(keycloakId);
+
+        log.info("Exclusão de conta concluída; sessões BFF revogadas e identidade removida do provedor.");
     }
 
     private String criarSessaoNoRedis(String accessToken, String refreshToken, String keycloakId) {
@@ -212,7 +237,14 @@ public class AuthService {
                 .refreshToken(refreshToken)
                 .build();
         sessionRepository.save(session);
+        String indexKey = sessionIndexKey(keycloakId);
+        redis.opsForSet().add(indexKey, sessionId);
+        redis.expire(indexKey, java.time.Duration.ofDays(30));
         return sessionId;
+    }
+
+    private String sessionIndexKey(String keycloakId) {
+        return "auth:user-sessions:" + keycloakId;
     }
 
     private KeycloakTokenResponse buscarTokensNoKeycloak(String grantType, String paramName, String paramValue) {
