@@ -46,7 +46,6 @@ public class AuthService {
 
     private final RestClient restClient;
     private final AuthSessionRepository sessionRepository;
-    private final KeycloakAccountDeletionProcessor accountDeletionProcessor;
     private final StringRedisTemplate redis;
     private final OAuthLoginAttemptStore loginAttemptStore;
     private final UserDirectoryPort userDirectory;
@@ -54,6 +53,7 @@ public class AuthService {
     private final JwtDecoder jwtDecoder;
     private final AuthenticatedUserProvider userprovider;
     private final ApplicationEventPublisher eventPublisher;
+    private final KeycloakAccountDeletionProcessor accountDeletionProcessor;
 
     @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
     private String clientId;
