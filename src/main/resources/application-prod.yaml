@@ -39,6 +39,15 @@ stripe:
   mode: test
 
 app:
+  security:
+    jwt:
+      required-audience: ${KEYCLOAK_API_AUDIENCE}
+  keycloak:
+    admin:
+      base-url: ${KEYCLOAK_ADMIN_BASE_URL}
+      realm: ${KEYCLOAK_REALM}
+      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID}
+      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
   frontend-url: ${FRONTEND_URL}
   auth:
     redirect-uri: ${AUTH_REDIRECT_URI}
