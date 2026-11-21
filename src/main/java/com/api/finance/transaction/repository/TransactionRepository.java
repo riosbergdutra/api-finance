@@ -92,10 +92,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     @Query(value = """
         INSERT INTO transactions
             (id, user_id, account_id, conta_destino_id, category_id, tipo, status,
-             valor, descricao, estabelecimento, data, hash_deduplicacao, created_at, updated_at)
+             valor, descricao, estabelecimento, data, hash_deduplicacao,
+             transfer_destination_applied, created_at, updated_at)
         VALUES
             (:id, :userId, :accountId, :destinationAccountId, :categoryId, :type, :status,
-             :amount, :description, :merchant, :date, :fingerprint, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             :amount, :description, :merchant, :date, :fingerprint,
+             :destinationBalanceApplied, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (hash_deduplicacao) DO NOTHING
         """, nativeQuery = true)
     int insertIfFingerprintAbsent(
@@ -110,7 +112,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("description") String description,
             @Param("merchant") String merchant,
             @Param("date") LocalDate date,
-            @Param("fingerprint") String fingerprint
+            @Param("fingerprint") String fingerprint,
+            @Param("destinationBalanceApplied") boolean destinationBalanceApplied
     );
 
 
