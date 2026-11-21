@@ -21,6 +21,9 @@ This file tracks verified code-level risks that remain before a public productio
 - [x] Serialize concurrent balance changes on the same account with a PostgreSQL pessimistic row lock.
 - [x] Apply confirmed transfers to both source and destination accounts in one database transaction; lock both accounts in deterministic order, reject self/cross-currency/inactive destinations, and reverse both sides on update/delete. A V5 flag preserves the behavior of historical transfers during reversal.
 - [x] Enforce uniqueness of non-null Stripe subscription IDs in PostgreSQL so a deletion webhook cannot ambiguously target multiple local users (V6).
+- [x] Deny PRO entitlements when the subscription period has expired or has no end date, even if the daily expiration scheduler has not yet run.
+- [x] Serialize FREE-plan account and monthly-transaction quota checks with a per-user subscription row lock, preventing concurrent requests from exceeding the configured limits.
+- [x] Run parallel dashboard JDBC queries on a dedicated bounded executor instead of the shared ForkJoin common pool; saturation applies backpressure.
 - [x] Bound Excel/PDF exports by a configurable maximum row count and return HTTP 413 instead of loading an unbounded number of transactions.
 - [x] Add composite indexes for transaction date-range queries, goal deadlines, subscription expiration, active accounts, and monthly budgets.
 - [x] Enforce one general budget per user/month/year with a partial unique index; migration fails safely if legacy duplicates need manual reconciliation.
