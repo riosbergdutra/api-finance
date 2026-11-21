@@ -56,6 +56,7 @@ class AuthServiceRefreshConcurrencyTest {
                 mock(JwtDecoder.class),
                 mock(AuthenticatedUserProvider.class),
                 mock(ApplicationEventPublisher.class),
+                mock(SubscriptionAccountDeletionPort.class),
                 mock(KeycloakAdminClient.class)
         );
         ReflectionTestUtils.setField(authService, "clientId", "test-client");
