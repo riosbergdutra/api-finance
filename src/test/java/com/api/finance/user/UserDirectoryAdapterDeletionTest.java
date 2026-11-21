@@ -39,6 +39,10 @@ class UserDirectoryAdapterDeletionTest {
         var order = inOrder(jdbc, users);
         order.verify(jdbc).update("DELETE FROM transactions WHERE user_id = ?", internalId);
         order.verify(jdbc).update("DELETE FROM budgets WHERE user_id = ?", internalId);
+        order.verify(jdbc).update(org.mockito.ArgumentMatchers.contains("UPDATE transactions SET category_id = NULL"),
+                eq(internalId));
+        order.verify(jdbc).update(org.mockito.ArgumentMatchers.contains("UPDATE budgets SET category_id = NULL"),
+                eq(internalId));
         order.verify(jdbc).update(org.mockito.ArgumentMatchers.contains("DELETE FROM merchant_rules"),
                 eq(internalId), eq(internalId));
         order.verify(jdbc).update(org.mockito.ArgumentMatchers.contains("UPDATE categories SET parent_id = NULL"),
