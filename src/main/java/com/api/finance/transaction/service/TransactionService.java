@@ -72,6 +72,10 @@ public class TransactionService {
     public TransactionResponse criar(CreateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
+        // Mantém a mesma assinatura bloqueada até inserir a transação, evitando
+        // que requisições simultâneas ultrapassem a cota mensal do plano FREE.
+        subscriptionService.lockSubscriptionForQuotaCheck(userId);
+
         LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
         LocalDate fimMes = inicioMes.withDayOfMonth(inicioMes.lengthOfMonth());
         long transacoesNoMes = transactionRepository.countByUserIdAndMes(userId, inicioMes, fimMes);
