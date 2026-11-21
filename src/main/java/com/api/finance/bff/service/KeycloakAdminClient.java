@@ -10,6 +10,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.Map;
@@ -56,6 +57,8 @@ public class KeycloakAdminClient {
                     .toBodilessEntity();
         } catch (HttpClientErrorException.NotFound alreadyDeleted) {
             // Idempotent retry: an already absent Keycloak identity is the desired state.
+        } catch (RestClientException unavailable) {
+            throw new AuthIntegrationException("Não foi possível remover a identidade no Keycloak.");
         }
     }
 
@@ -70,12 +73,17 @@ public class KeycloakAdminClient {
                 .pathSegment("realms", realm, "protocol", "openid-connect", "token")
                 .build().encode().toUri();
 
-        Map<String, Object> tokenResponse = restClient.post()
-                .uri(tokenUri)
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(form)
-                .retrieve()
-                .body(Map.class);
+        Map<String, Object> tokenResponse;
+        try {
+            tokenResponse = restClient.post()
+                    .uri(tokenUri)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientException unavailable) {
+            throw new AuthIntegrationException("Não foi possível autenticar o serviço administrativo no Keycloak.");
+        }
 
         Object token = tokenResponse == null ? null : tokenResponse.get("access_token");
         if (!(token instanceof String value) || value.isBlank()) {
