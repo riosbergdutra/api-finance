@@ -26,7 +26,6 @@ public class DashboardExecutorConfig {
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);
-        executor.initialize();
         return executor;
     }
 }
