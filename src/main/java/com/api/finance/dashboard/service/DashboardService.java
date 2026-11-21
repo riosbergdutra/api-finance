@@ -8,14 +8,14 @@ import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.user.application.port.UserDirectoryPort;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import java.util.concurrent.Executor;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -27,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
  * e da capacidade do pool de conexões do banco; não há benchmark assumido aqui.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class DashboardService {
 
@@ -36,7 +35,21 @@ public class DashboardService {
     private final NotificationRepository notificationRepository;
     private final GoalRepository goalRepository;
     private final UserDirectoryPort userDirectory;
-    private final ThreadPoolTaskExecutor dashboardExecutor;
+    private final Executor dashboardExecutor;
+
+    public DashboardService(AccountRepository accountRepository,
+                            TransactionRepository transactionRepository,
+                            NotificationRepository notificationRepository,
+                            GoalRepository goalRepository,
+                            UserDirectoryPort userDirectory,
+                            @Qualifier("dashboardExecutor") Executor dashboardExecutor) {
+        this.accountRepository = accountRepository;
+        this.transactionRepository = transactionRepository;
+        this.notificationRepository = notificationRepository;
+        this.goalRepository = goalRepository;
+        this.userDirectory = userDirectory;
+        this.dashboardExecutor = dashboardExecutor;
+    }
 
     public DashboardResponse getDashboard(AuthenticatedUser caller) {
         UUID userId = userDirectory.findInternalUserId(caller.id())
