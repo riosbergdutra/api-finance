@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -99,11 +100,15 @@ public class StripeService {
             throw new IllegalStateException("Cancelamento Stripe indisponível fora do modo de teste.");
         }
         log.info("[Stripe DEMO] Cancelando subscription de teste id={}", subscriptionId);
-        restClient.delete()
-                .uri(STRIPE_BASE + "/subscriptions/{id}", subscriptionId)
-                .header("Authorization", "Bearer " + stripeApiKey)
-                .retrieve()
-                .toBodilessEntity();
+        try {
+            restClient.delete()
+                    .uri(STRIPE_BASE + "/subscriptions/{id}", subscriptionId)
+                    .header("Authorization", "Bearer " + stripeApiKey)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException.NotFound alreadyAbsent) {
+            // Idempotent deletion: an already absent provider subscription is canceled for our purposes.
+        }
     }
 
     private String buildFormBody(Map<String, Object> params) {
