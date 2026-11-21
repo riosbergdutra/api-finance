@@ -71,4 +71,15 @@ class ModularArchitectureTest {
         rule.check(applicationClasses);
     }
 
+    @Test
+    void subscriptionMustPublishEventsInsteadOfCallingNotificationModule() {
+        ArchRule rule = noClasses()
+                .that().resideInAPackage("..subscription..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("..notification..")
+                .because("subscription lifecycle notifications are delivered through after-commit events");
+
+        rule.check(applicationClasses);
+    }
+
 }
