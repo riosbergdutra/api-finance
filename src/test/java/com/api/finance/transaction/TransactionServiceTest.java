@@ -11,11 +11,16 @@ import com.api.finance.transaction.dto.CreateTransactionRequest;
 import com.api.finance.transaction.dto.TransactionResponse;
 import com.api.finance.transaction.dto.UpdateTransactionRequest;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
+import com.api.finance.transaction.exception.DuplicateTransactionException;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.model.TransactionStatus;
 import com.api.finance.transaction.model.TransactionType;
 import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.transaction.service.TransactionService;
+import com.api.finance.subscription.service.SubscriptionService;
+import com.api.finance.budget.service.BudgetService;
+import com.api.finance.user.model.User;
+import org.springframework.context.ApplicationEventPublisher;
 import com.api.finance.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +54,9 @@ class TransactionServiceTest {
     @Mock CategoryRepository categoryRepository;
     @Mock CategoryService categoryService;
     @Mock UserRepository userRepository;
+    @Mock SubscriptionService subscriptionService;
+    @Mock BudgetService budgetService;
+    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks TransactionService transactionService;
 
     AuthenticatedUser caller;
@@ -98,6 +106,7 @@ class TransactionServiceTest {
         @Test
         @DisplayName("cria transação DESPESA e debita saldo da conta")
         void criaDespesaEDebitaSaldo() {
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(100), "Mercado", "Supermercado X", LocalDate.now());
@@ -105,7 +114,8 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(), anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             TransactionResponse result = transactionService.criar(req, caller);
 
@@ -118,6 +128,7 @@ class TransactionServiceTest {
         @Test
         @DisplayName("cria transação RECEITA e credita saldo da conta")
         void criaReceitaECreditaSaldo() {
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.RECEITA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(500), "Salário", null, LocalDate.now());
@@ -125,7 +136,9 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -137,6 +150,7 @@ class TransactionServiceTest {
         @DisplayName("não ajusta saldo quando status é PENDENTE")
         void naoAjustaSaldoPendente() {
             BigDecimal saldoOriginal = account.getBalance();
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.PENDENTE,
                     BigDecimal.valueOf(200), "Fatura", null, LocalDate.now());
@@ -144,7 +158,9 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -153,8 +169,9 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("lança IllegalStateException quando transação duplicada")
+        @DisplayName("lança DuplicateTransactionException quando transação duplicada")
         void lancaExcecaoTransacaoDuplicada() {
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "Mercado", null, LocalDate.now());
@@ -163,13 +180,14 @@ class TransactionServiceTest {
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(true);
 
             assertThatThrownBy(() -> transactionService.criar(req, caller))
-                    .isInstanceOf(IllegalStateException.class)
+                    .isInstanceOf(DuplicateTransactionException.class)
                     .hasMessageContaining("duplicada");
         }
 
         @Test
         @DisplayName("lança AccountNotFoundException quando conta não pertence ao usuário")
         void lancaExcecaoContaNaoEncontrada() {
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     UUID.randomUUID(), null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "X", null, LocalDate.now());
@@ -184,6 +202,7 @@ class TransactionServiceTest {
         @DisplayName("usa categorização automática quando categoryId é nulo")
         void usaCategorizacaoAutomatica() {
             Category cat = category();
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(50), "Padaria", "Padaria Estrela", LocalDate.now());
@@ -191,7 +210,9 @@ class TransactionServiceTest {
             given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar("Padaria Estrela", USER_ID)).willReturn(Optional.of(cat));
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -208,6 +229,7 @@ class TransactionServiceTest {
         @DisplayName("reverte saldo antigo e aplica novo quando ambas confirmadas")
         void reverteEAplicaNovaSaldo() {
             // Transação original: DESPESA 100 CONFIRMADA → conta 1000
+            given(userRepository.findByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(user()));
             UpdateTransactionRequest req = new UpdateTransactionRequest(
                     null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());

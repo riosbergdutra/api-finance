@@ -1,13 +1,11 @@
 spring:
   application:
     name: finance
-  profiles:
-    active: dev
 
   jpa:
     hibernate:
-      ddl-auto: create
-    show-sql: true
+      ddl-auto: none
+    show-sql: false
     # Com Virtual Threads, o gargalo é o pool de conexões.
     # pool_size = (núcleos * 2) + disco_spindle é um bom ponto de partida.
     properties:
@@ -20,8 +18,10 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:default}
+      password: ${REDIS_PASSWORD:}
       connect-timeout: 2000ms
       timeout: 1000ms
       lettuce:
@@ -30,6 +30,13 @@ spring:
           max-idle: 10
           min-idle: 2
           max-wait: 500ms
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  cookies:
+    secure: ${COOKIE_SECURE:true}
+    same-site: ${COOKIE_SAME_SITE:Lax}
 
 # ─── Resilience4j ──────────────────────────────────────────────────
 resilience4j:

@@ -50,6 +50,10 @@ class BudgetServiceTest {
     void setUp() {
         caller = caller();
         budget = budget();
+
+    }
+
+    private void stubUser() {
         given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
@@ -58,6 +62,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("listar: retorna orçamentos do mês/ano")
     void listarRetornaOrcamentos() {
+            stubUser();
         given(budgetRepository.findByUserIdAndMesAndAno(USER_ID, mes, ano)).willReturn(List.of(budget));
 
         List<BudgetResponse> result = budgetService.listar(mes, ano, caller);
@@ -74,10 +79,12 @@ class BudgetServiceTest {
         @Test
         @DisplayName("cria orçamento geral (sem categoria) com sucesso")
         void criaOrcamentoGeralComSucesso() {
+            stubUser();
             CreateBudgetRequest req = new CreateBudgetRequest(
                     null, BigDecimal.valueOf(2000), mes, ano, 80);
 
             given(budgetRepository.existsByUserIdAndCategoryIdAndMesAndAno(USER_ID, null, mes, ano)).willReturn(false);
+            given(transactionRepository.sumDespesaTotal(USER_ID, LocalDate.of(ano, mes, 1), LocalDate.of(ano, mes, 1).withDayOfMonth(LocalDate.of(ano, mes, 1).lengthOfMonth()))).willReturn(BigDecimal.ZERO);
             given(budgetRepository.save(any())).willAnswer(inv -> {
                 Budget b = inv.getArgument(0);
                 b.setId(BUDGET_ID);
@@ -93,13 +100,14 @@ class BudgetServiceTest {
         @Test
         @DisplayName("cria orçamento por categoria com sucesso e calcula gasto atual")
         void criaOrcamentoPorCategoriaComGasto() {
+            stubUser();
             CreateBudgetRequest req = new CreateBudgetRequest(
                     CATEGORY_ID, BigDecimal.valueOf(500), mes, ano, null);
             Category cat = category();
 
             given(budgetRepository.existsByUserIdAndCategoryIdAndMesAndAno(USER_ID, CATEGORY_ID, mes, ano)).willReturn(false);
             given(categoryRepository.findByIdForUser(CATEGORY_ID, USER_ID)).willReturn(Optional.of(cat));
-            given(transactionRepository.sumDespesaByCategoria(USER_ID, CATEGORY_ID, mes, ano))
+            given(transactionRepository.sumDespesaByCategoria(USER_ID, CATEGORY_ID, LocalDate.of(ano, mes, 1), LocalDate.of(ano, mes, 1).withDayOfMonth(LocalDate.of(ano, mes, 1).lengthOfMonth())))
                     .willReturn(BigDecimal.valueOf(150));
             given(budgetRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -111,6 +119,7 @@ class BudgetServiceTest {
         @Test
         @DisplayName("lança IllegalStateException quando orçamento duplicado para categoria/mês/ano")
         void lancaExcecaoDuplicado() {
+            stubUser();
             CreateBudgetRequest req = new CreateBudgetRequest(
                     CATEGORY_ID, BigDecimal.valueOf(500), mes, ano, null);
 
@@ -127,6 +136,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("atualizar: altera limite e alerta do orçamento")
     void atualizarOrcamento() {
+            stubUser();
         CreateBudgetRequest req = new CreateBudgetRequest(
                 null, BigDecimal.valueOf(1000), mes, ano, 75);
 
@@ -145,6 +155,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("deletar: remove orçamento com sucesso")
     void deletarOrcamento() {
+            stubUser();
         given(budgetRepository.findByIdAndUserId(BUDGET_ID, USER_ID)).willReturn(Optional.of(budget));
 
         assertThatCode(() -> budgetService.deletar(BUDGET_ID, caller)).doesNotThrowAnyException();
@@ -155,6 +166,7 @@ class BudgetServiceTest {
     @Test
     @DisplayName("deletar: lança BudgetNotFoundException quando não encontrado")
     void deletarLancaNotFound() {
+            stubUser();
         given(budgetRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> budgetService.deletar(UUID.randomUUID(), caller))

@@ -21,8 +21,7 @@ import java.util.UUID;
 @Table(
     name = "accounts",
     indexes = {
-        @Index(name = "idx_accounts_user_id", columnList = "user_id"),
-        @Index(name = "idx_accounts_user_active", columnList = "user_id")
+        @Index(name = "idx_accounts_user_id", columnList = "user_id")
     }
 )
 @Getter

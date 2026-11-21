@@ -4,6 +4,7 @@ import com.api.finance.transaction.model.Transaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -79,6 +80,39 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("ate") LocalDate ate);
 
     boolean existsByHashDeduplicacao(String hash);
+
+    /**
+     * Insere a transação somente se a impressão digital ainda não existir.
+     * A restrição UNIQUE do PostgreSQL é a autoridade final sob concorrência:
+     * duas requisições simultâneas não conseguem criar o mesmo lançamento.
+     *
+     * @return 1 quando inserida; 0 quando a impressão digital já existia.
+     */
+    @Modifying
+    @Query(value = """
+        INSERT INTO transactions
+            (id, user_id, account_id, conta_destino_id, category_id, tipo, status,
+             valor, descricao, estabelecimento, data, hash_deduplicacao, created_at, updated_at)
+        VALUES
+            (:id, :userId, :accountId, :destinationAccountId, :categoryId, :type, :status,
+             :amount, :description, :merchant, :date, :fingerprint, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (hash_deduplicacao) DO NOTHING
+        """, nativeQuery = true)
+    int insertIfFingerprintAbsent(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId,
+            @Param("accountId") UUID accountId,
+            @Param("destinationAccountId") UUID destinationAccountId,
+            @Param("categoryId") UUID categoryId,
+            @Param("type") String type,
+            @Param("status") String status,
+            @Param("amount") BigDecimal amount,
+            @Param("description") String description,
+            @Param("merchant") String merchant,
+            @Param("date") LocalDate date,
+            @Param("fingerprint") String fingerprint
+    );
+
 
     @Query("""
         SELECT COUNT(t) FROM Transaction t

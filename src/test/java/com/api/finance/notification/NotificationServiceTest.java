@@ -2,12 +2,13 @@ package com.api.finance.notification;
 
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.notification.dto.NotificationResponse;
+import com.api.finance.notification.application.port.out.UserIdentityPort;
+import com.api.finance.notification.application.port.out.NotificationPushPort;
 import com.api.finance.notification.model.Notification;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.notification.service.NotificationService;
 import com.api.finance.shared.exception.ResourceNotFoundException;
-import com.api.finance.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,7 +35,8 @@ import static org.mockito.BDDMockito.*;
 class NotificationServiceTest {
 
     @Mock NotificationRepository notificationRepository;
-    @Mock UserRepository userRepository;
+    @Mock UserIdentityPort userIdentityPort;
+    @Mock NotificationPushPort notificationPushPort;
     @InjectMocks NotificationService notificationService;
 
     AuthenticatedUser caller;
@@ -44,7 +46,11 @@ class NotificationServiceTest {
     void setUp() {
         caller = caller();
         notification = notification();
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+
+    }
+
+    private void stubUser() {
+        given(userIdentityPort.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listar ──────────────────────────────────────────────────────
@@ -52,6 +58,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("listar: retorna page de notificações")
     void listarRetornaPage() {
+            stubUser();
         Page<Notification> page = new PageImpl<>(List.of(notification));
         given(notificationRepository.findByUserIdOrderByLidaAscCriadoEmDesc(eq(USER_ID), any(Pageable.class)))
                 .willReturn(page);
@@ -67,6 +74,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("listarNaoLidas: retorna somente não lidas")
     void listarNaoLidas() {
+            stubUser();
         given(notificationRepository.findByUserIdAndLidaFalseOrderByCriadoEmDesc(USER_ID))
                 .willReturn(List.of(notification));
 
@@ -81,6 +89,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("contarNaoLidas: retorna contagem correta")
     void contarNaoLidas() {
+            stubUser();
         given(notificationRepository.countByUserIdAndLidaFalse(USER_ID)).willReturn(5L);
 
         long total = notificationService.contarNaoLidas(caller);
@@ -96,6 +105,7 @@ class NotificationServiceTest {
         @Test
         @DisplayName("marca notificação como lida com sucesso")
         void marcaComoLida() {
+            stubUser();
             given(notificationRepository.findByIdAndUserId(NOTIFICATION_ID, USER_ID))
                     .willReturn(Optional.of(notification));
             given(notificationRepository.save(any())).willReturn(notification);
@@ -109,6 +119,7 @@ class NotificationServiceTest {
         @Test
         @DisplayName("lança ResourceNotFoundException quando notificação não encontrada")
         void lancaNotFound() {
+            stubUser();
             given(notificationRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> notificationService.marcarComoLida(UUID.randomUUID(), caller))
@@ -121,6 +132,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("marcarTodasComoLidas: retorna quantidade marcada")
     void marcarTodasComoLidas() {
+            stubUser();
         given(notificationRepository.marcarTodasComoLidas(USER_ID)).willReturn(3);
 
         int total = notificationService.marcarTodasComoLidas(caller);
@@ -137,26 +149,28 @@ class NotificationServiceTest {
         @DisplayName("salva notificação com entidade relacionada")
         void criaComEntidade() {
             notificationService.criarNotificacao(
-                    USER_ID, NotificationType.ORCAMENTO_ALERTA,
+                    KEYCLOAK_ID.toString(), USER_ID, NotificationType.ORCAMENTO_PROXIMO,
                     "Alerta", "Mensagem", "BUDGET", BUDGET_ID);
 
             then(notificationRepository).should().save(argThat(n ->
                     n.getUserId().equals(USER_ID)
-                    && n.getTipo() == NotificationType.ORCAMENTO_ALERTA
+                    && n.getTipo() == NotificationType.ORCAMENTO_PROXIMO
                     && "BUDGET".equals(n.getEntidadeTipo())
                     && BUDGET_ID.equals(n.getEntidadeId())
             ));
+            then(notificationPushPort).should().publish(eq(KEYCLOAK_ID.toString()), any());
         }
 
         @Test
         @DisplayName("salva notificação sem entidade relacionada")
         void criaSemEntidade() {
             notificationService.criarNotificacao(
-                    USER_ID, NotificationType.META_CONCLUIDA, "Meta!", "Parabéns");
+                    KEYCLOAK_ID.toString(), USER_ID, NotificationType.META_CONCLUIDA, "Meta!", "Parabéns");
 
             then(notificationRepository).should().save(argThat(n ->
                     n.getEntidadeTipo() == null && n.getEntidadeId() == null
             ));
+            then(notificationPushPort).should().publish(eq(KEYCLOAK_ID.toString()), any());
         }
     }
 }
