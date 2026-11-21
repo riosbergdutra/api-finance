@@ -180,6 +180,99 @@ public class SubscriptionService {
         eventPublisher.publishEvent(new FinanceEvents.AssinaturaCanceladaEvent(keycloakId, userId));
     }
 
+    /**
+     * Applies recurring Stripe subscription events in provider-created order.
+     * A row lock serializes concurrent webhook deliveries for the same subscription.
+     */
+    @Transactional
+    public boolean aplicarEventoStripeSubscription(
+            String stripeSubscriptionId,
+            UUID metadataUserId,
+            String stripeStatus,
+            LocalDate periodEnd,
+            long eventCreated,
+            String eventId) {
+        if (stripeSubscriptionId == null || stripeSubscriptionId.isBlank()
+                || stripeStatus == null || stripeStatus.isBlank()
+                || eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("Dados do evento Stripe incompletos.");
+        }
+
+        Subscription sub = subscriptionRepository.findByStripeSubscriptionIdForUpdate(stripeSubscriptionId)
+                .orElseGet(() -> {
+                    if (metadataUserId == null) {
+                        throw new IllegalStateException(
+                                "Subscription Stripe desconhecida e sem metadata de usuário para associação.");
+                    }
+                    subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), metadataUserId);
+                    return subscriptionRepository.findByUserIdForUpdate(metadataUserId)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "Não foi possível bloquear a assinatura local para aplicar o evento Stripe."));
+                });
+
+        if (metadataUserId != null && !metadataUserId.equals(sub.getUserId())) {
+            throw new IllegalStateException("Metadata do Stripe não corresponde ao proprietário da assinatura.");
+        }
+        if (sub.getStripeSubscriptionId() != null
+                && !stripeSubscriptionId.equals(sub.getStripeSubscriptionId())) {
+            throw new IllegalStateException("A assinatura local já está vinculada a outro ID Stripe.");
+        }
+
+        Long previousCreated = sub.getStripeLastEventCreated();
+        if (previousCreated != null && eventCreated < previousCreated) {
+            log.info("[Stripe] Evento antigo ignorado para subscription; eventId={} type/status={}",
+                    eventId, stripeStatus);
+            return false;
+        }
+        // Stripe timestamps have one-second precision. Never let an active
+        // update from the same second resurrect a subscription already marked
+        // canceled by another event from that second.
+        if (previousCreated != null && eventCreated == previousCreated
+                && sub.getStatus() == SubscriptionStatus.CANCELLED
+                && "active".equalsIgnoreCase(stripeStatus)) {
+            return false;
+        }
+
+        boolean wasPro = sub.isPro();
+        sub.setStripeSubscriptionId(stripeSubscriptionId);
+        sub.setStripeLastEventCreated(eventCreated);
+        sub.setStripeLastEventId(eventId);
+
+        if ("active".equalsIgnoreCase(stripeStatus)) {
+            if (periodEnd == null) {
+                throw new IllegalStateException(
+                        "Stripe não informou o fim do período da assinatura " + stripeSubscriptionId + ".");
+            }
+            sub.setPlano(PlanType.PRO);
+            sub.setStatus(SubscriptionStatus.ACTIVE);
+            sub.setInicioPeriodo(LocalDate.now());
+            sub.setFimPeriodo(periodEnd);
+        } else {
+            sub.setPlano(PlanType.FREE);
+            if ("canceled".equalsIgnoreCase(stripeStatus)) {
+                sub.setStatus(SubscriptionStatus.CANCELLED);
+            } else if ("incomplete_expired".equalsIgnoreCase(stripeStatus)) {
+                sub.setStatus(SubscriptionStatus.EXPIRED);
+            } else {
+                // past_due, unpaid, incomplete, paused and unknown states do
+                // not grant paid entitlements; Stripe can later send a newer active event.
+                sub.setStatus(SubscriptionStatus.PENDING_PAYMENT);
+            }
+        }
+
+        subscriptionRepository.save(sub);
+        if (wasPro && !sub.isPro()) {
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(
+                    new FinanceEvents.AssinaturaExpiradaEvent(keycloakId, sub.getUserId()));
+        } else if (!wasPro && sub.isPro()) {
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(
+                    new FinanceEvents.ProAtivadoEvent(keycloakId, sub.getUserId(), sub.getFimPeriodo()));
+        }
+        return true;
+    }
+
     /** Aplica o evento de cancelamento à assinatura Stripe exata, sem afetar outras contas. */
     @Transactional
     public void expirarPorStripeSubscriptionId(String stripeSubscriptionId) {
