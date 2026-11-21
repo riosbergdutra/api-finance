@@ -2,7 +2,7 @@ package com.api.finance.notification;
 
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.notification.dto.NotificationResponse;
-import com.api.finance.notification.application.port.out.UserIdentityPort;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import com.api.finance.notification.application.port.out.NotificationPushPort;
 import com.api.finance.notification.model.Notification;
 import com.api.finance.notification.model.NotificationType;
@@ -35,7 +35,7 @@ import static org.mockito.BDDMockito.*;
 class NotificationServiceTest {
 
     @Mock NotificationRepository notificationRepository;
-    @Mock UserIdentityPort userIdentityPort;
+    @Mock UserDirectoryPort userDirectory;
     @Mock NotificationPushPort notificationPushPort;
     @InjectMocks NotificationService notificationService;
 
@@ -50,7 +50,7 @@ class NotificationServiceTest {
     }
 
     private void stubUser() {
-        given(userIdentityPort.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listar ──────────────────────────────────────────────────────
