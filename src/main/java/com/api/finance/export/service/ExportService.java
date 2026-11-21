@@ -1,6 +1,7 @@
 package com.api.finance.export.service;
 
 import com.api.finance.config.AuthenticatedUser;
+import com.api.finance.export.exception.ExportLimitExceededException;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.transaction.model.Transaction;
