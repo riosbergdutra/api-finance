@@ -31,6 +31,11 @@ class UserDirectoryAdapterDeletionTest {
 
         new UserDirectoryAdapter(users, jdbc).deleteByIdentityProviderId(keycloakId);
 
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("INSERT INTO deleted_user_identities"),
+                org.mockito.ArgumentMatchers.anyString());
+        verify(jdbc).update(org.mockito.ArgumentMatchers.contains("INSERT INTO account_deletion_outbox"),
+                eq(keycloakId));
+
         var order = inOrder(jdbc, users);
         order.verify(jdbc).update("DELETE FROM transactions WHERE user_id = ?", internalId);
         order.verify(jdbc).update("DELETE FROM budgets WHERE user_id = ?", internalId);
@@ -56,7 +61,7 @@ class UserDirectoryAdapterDeletionTest {
         new UserDirectoryAdapter(users, jdbc).deleteByIdentityProviderId(keycloakId);
 
         verify(jdbc, org.mockito.Mockito.never()).update(
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.<Object[]>any());
+                eq("DELETE FROM transactions WHERE user_id = ?"), eq(UUID.randomUUID()));
         verify(users, org.mockito.Mockito.never()).delete(org.mockito.ArgumentMatchers.any(User.class));
     }
 }
