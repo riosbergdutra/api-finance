@@ -20,12 +20,10 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Serviço do Dashboard.
  *
- * As 4 queries são executadas em PARALELO via CompletableFuture.
- * Com Virtual Threads (habilitadas em FinanceApplication via TomcatProtocolHandlerCustomizer),
- * cada query roda em sua própria thread virtual — sem bloquear thread de plataforma.
- *
- * Sequencial: ~200ms + ~150ms + ~150ms + ~100ms = ~600ms
- * Em paralelo: max(~200ms, ~150ms, ~150ms, ~100ms) = ~200ms
+ * As consultas são disparadas em paralelo via CompletableFuture.supplyAsync().
+ * Sem executor explícito, elas usam o ForkJoinPool.commonPool — não o executor
+ * de virtual threads configurado no Tomcat. O ganho de latência depende da carga
+ * e da capacidade do pool de conexões do banco; não há benchmark assumido aqui.
  */
 @Service
 @RequiredArgsConstructor
@@ -46,7 +44,7 @@ public class DashboardService {
         LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
         LocalDate fimMes = inicioMes.withDayOfMonth(inicioMes.lengthOfMonth());
 
-        // ── 4 queries em paralelo via CompletableFuture ──────────────────
+        // ── Consultas em paralelo; contagens executadas no banco ───────────
         CompletableFuture<BigDecimal> saldoFuture =
                 CompletableFuture.supplyAsync(() ->
                         accountRepository.sumBalanceByUserId(userId));
@@ -63,7 +61,7 @@ public class DashboardService {
                 CompletableFuture.supplyAsync(() -> new long[]{
                         notificationRepository.countByUserIdAndLidaFalse(userId),
                         accountRepository.countByUserIdAndActiveTrue(userId),
-                        goalRepository.findByUserIdAndConcluidaFalse(userId).size()
+                        goalRepository.countByUserIdAndConcluidaFalse(userId)
                 });
 
         CompletableFuture.allOf(saldoFuture, receitasFuture, despesasFuture, contadoresFuture).join();
