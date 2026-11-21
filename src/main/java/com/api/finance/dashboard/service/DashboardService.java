@@ -7,7 +7,7 @@ import com.api.finance.goal.repository.GoalRepository;
 import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,10 +36,10 @@ public class DashboardService {
     private final TransactionRepository transactionRepository;
     private final NotificationRepository notificationRepository;
     private final GoalRepository goalRepository;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
 
     public DashboardResponse getDashboard(AuthenticatedUser caller) {
-        UUID userId = userRepository.findIdByKeycloakId(caller.id())
+        UUID userId = userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
 
         // Primeiro e último dia do mês atual — compatível com PostgreSQL
