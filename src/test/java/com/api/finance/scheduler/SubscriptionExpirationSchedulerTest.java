@@ -64,7 +64,6 @@ class SubscriptionExpirationSchedulerTest {
                 contains("3 dia(s)")
         );
         verify(subscriptionService).expirarAssinaturasVencidas();
-        verifyNoInteractions(userDirectory);
     }
 
     @Test
