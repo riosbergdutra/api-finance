@@ -43,14 +43,14 @@ app:
   keycloak:
     issuer-uri: ${KEYCLOAK_ISSUER_URI}
     backend-uri: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_ISSUER_URI}}
-  security:
-    jwt:
-      required-audience: ${KEYCLOAK_API_AUDIENCE}
     admin:
       base-url: ${KEYCLOAK_ADMIN_BASE_URL}
       realm: ${KEYCLOAK_REALM}
       client-id: ${KEYCLOAK_ADMIN_CLIENT_ID}
       client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+  security:
+    jwt:
+      required-audience: ${KEYCLOAK_API_AUDIENCE}
   frontend-url: ${FRONTEND_URL}
   auth:
     redirect-uri: ${AUTH_REDIRECT_URI}
