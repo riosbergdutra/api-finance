@@ -21,8 +21,7 @@ import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.model.TransactionStatus;
 import com.api.finance.transaction.model.TransactionType;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -44,7 +43,7 @@ public class TransactionService {
     private final AccountRepository accountRepository;
     private final CategoryRepository categoryRepository;
     private final CategoryService categoryService;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
     private final SubscriptionService subscriptionService;
     private final ApplicationEventPublisher eventPublisher;  // NOVO
     private final BudgetService budgetService;  // FIX: recalcula orçamento após mudanças em transações
@@ -69,7 +68,6 @@ public class TransactionService {
     @Transactional
     public TransactionResponse criar(CreateTransactionRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        User user = resolveUser(caller);
 
         // Verifica limite do plano FREE
         LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
@@ -128,7 +126,7 @@ public class TransactionService {
         log.info("Transação criada: id={} user={} tipo={}", saved.getId(), userId, req.tipo());
 
         // FIX: eventos publicados APÓS salvar — listener executa só após commit
-        String keycloakId = user.getKeycloakId().toString();
+        String keycloakId = caller.id().toString();
 
         if (status == TransactionStatus.PENDENTE) {
             eventPublisher.publishEvent(new FinanceEvents.TransacaoPendenteEvent(
@@ -272,12 +270,9 @@ public class TransactionService {
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 
-    private User resolveUser(AuthenticatedUser caller) {
-        return userRepository.findByKeycloakId(caller.id())
-                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
-    }
+
 }
