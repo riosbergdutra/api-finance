@@ -37,7 +37,7 @@ class NotificationWebSocketHandlerTest {
     void deveFecharWebSocketQuandoSessaoBffForRevogada() throws Exception {
         WebSocketSession webSocket = mock(WebSocketSession.class);
         HttpHeaders headers = new HttpHeaders();
-        headers.add("Cookie", "SESSION_ID=opaque-session-id");
+        headers.add("Cookie", "SESSION_ID=123e4567-e89b-12d3-a456-426614174000");
         Map<String, Object> attributes = new HashMap<>();
         when(webSocket.getHandshakeHeaders()).thenReturn(headers);
         when(webSocket.getAttributes()).thenReturn(attributes);
@@ -48,14 +48,14 @@ class NotificationWebSocketHandlerTest {
                 .header("alg", "none")
                 .subject("user-123")
                 .build();
-        when(authService.autenticarSessao("opaque-session-id")).thenReturn(jwt);
+        when(authService.autenticarSessao("123e4567-e89b-12d3-a456-426614174000")).thenReturn(jwt);
 
         handler.afterConnectionEstablished(webSocket);
 
         assertEquals(1, handler.totalSessoesAtivas());
-        assertEquals("opaque-session-id", attributes.get("bffSessionId"));
+        assertEquals("123e4567-e89b-12d3-a456-426614174000", attributes.get("bffSessionId"));
 
-        handler.onBffSessionRevoked(new BffSessionRevokedEvent("opaque-session-id"));
+        handler.onBffSessionRevoked(new BffSessionRevokedEvent("123e4567-e89b-12d3-a456-426614174000"));
 
         verify(webSocket).close(CloseStatus.POLICY_VIOLATION);
         assertEquals(0, handler.totalSessoesAtivas());
