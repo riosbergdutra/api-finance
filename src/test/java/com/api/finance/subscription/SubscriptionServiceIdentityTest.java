@@ -78,6 +78,23 @@ class SubscriptionServiceIdentityTest {
     }
 
     @Test
+    void lockSubscriptionForQuotaCheckMustCreateOrFindAndLockThePlanRow() {
+        Subscription free = Subscription.builder()
+                .userId(INTERNAL_USER_ID)
+                .plano(PlanType.FREE)
+                .status(SubscriptionStatus.ACTIVE)
+                .build();
+        when(subscriptionRepository.findByUserIdForUpdate(INTERNAL_USER_ID))
+                .thenReturn(Optional.of(free));
+
+        service.lockSubscriptionForQuotaCheck(INTERNAL_USER_ID);
+
+        verify(subscriptionRepository).insertFreeIfAbsent(any(UUID.class),
+                org.mockito.ArgumentMatchers.eq(INTERNAL_USER_ID));
+        verify(subscriptionRepository).findByUserIdForUpdate(INTERNAL_USER_ID);
+    }
+
+    @Test
     void readOnlyPlanChecksTreatMissingSubscriptionAsFreeWithoutCreatingRows() {
         when(subscriptionRepository.findByUserId(INTERNAL_USER_ID)).thenReturn(Optional.empty());
 
