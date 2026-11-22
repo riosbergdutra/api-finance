@@ -52,5 +52,29 @@ jobs:
           docker run --rm \
             -v "$PWD/performance:/scripts:ro" \
             grafana/k6:0.54.0 inspect /scripts/k6/readiness.js
+      - name: Validate operations shell scripts
+        run: bash -n scripts/ops/*.sh
+      - name: Validate Alertmanager configuration and Compose overlay
+        run: |
+          printf 'https://example.invalid/alertmanager-webhook\\n' > /tmp/financeflow-alertmanager-webhook-url
+          chmod 600 /tmp/financeflow-alertmanager-webhook-url
+          ALERTMANAGER_WEBHOOK_URL_FILE=/tmp/financeflow-alertmanager-webhook-url \
+            docker compose -f compose.yaml -f compose.alertmanager.yaml config --quiet
+          docker run --rm \
+            -v "$PWD/ops/alertmanager:/etc/alertmanager:ro" \
+            -v /tmp/financeflow-alertmanager-webhook-url:/run/secrets/alertmanager_webhook_url:ro \
+            --entrypoint amtool prom/alertmanager:v0.28.1 \
+            check-config /etc/alertmanager/alertmanager.yml
+      - name: Validate production TLS Nginx example
+        run: |
+          mkdir -p /tmp/financeflow-tls
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout /tmp/financeflow-tls/tls_privkey.pem \
+            -out /tmp/financeflow-tls/tls_fullchain.pem \
+            -subj "/CN=finance.example.com"
+          docker run --rm --add-host finance-app:127.0.0.1 \
+            -v "$PWD/ops/production/nginx-tls.conf.example:/etc/nginx/nginx.conf:ro" \
+            -v /tmp/financeflow-tls:/run/secrets:ro \
+            nginx:1.27-alpine nginx -t
       - name: Build production container image
         run: docker build --pull --tag financeflow-backend:${{ github.sha }} .
