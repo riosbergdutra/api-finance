@@ -86,5 +86,6 @@ final_version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_re
   -c "SELECT MAX(version::int) FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$';")"
 [[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
 
+unset PGPASSWORD password
 echo "PASS: sanitized V2 backup restored and Flyway V3-V9 applied in disposable PostgreSQL."
 echo "The temporary container will now be removed; no existing Docker volume or database was touched."
