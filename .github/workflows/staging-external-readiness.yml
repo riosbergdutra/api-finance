@@ -56,6 +56,7 @@ jobs:
     environment: financeflow-staging
     timeout-minutes: 10
     env:
+      STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
       STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
       STRIPE_WEBHOOK_ENDPOINT_ID: ${{ secrets.STRIPE_WEBHOOK_ENDPOINT_ID }}
       STRIPE_WEBHOOK_ENDPOINT_URL: ${{ secrets.STRIPE_WEBHOOK_ENDPOINT_URL }}
