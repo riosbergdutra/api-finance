@@ -22,7 +22,7 @@ chmod 700 "$tmp"
 trap 'rm -rf "$tmp"' EXIT
 
 export STRIPE_API_KEY
-stripe webhook_endpoints retrieve "$STRIPE_WEBHOOK_ENDPOINT_ID" --format json > "$tmp/endpoint.json"
+stripe webhook_endpoints retrieve "$STRIPE_WEBHOOK_ENDPOINT_ID" > "$tmp/endpoint.json"
 jq -e --arg url "$STRIPE_WEBHOOK_ENDPOINT_URL" '.livemode == false and .url == $url and .status == "enabled"' \
   "$tmp/endpoint.json" >/dev/null || {
     echo "Refusing to trigger events: endpoint must be enabled, Test Mode, and match the exact staging URL." >&2
@@ -31,7 +31,7 @@ jq -e --arg url "$STRIPE_WEBHOOK_ENDPOINT_URL" '.livemode == false and .url == $
 
 echo "Confirmed registered webhook endpoint is enabled and in Stripe Test Mode."
 for event in payment_intent.succeeded customer.subscription.deleted; do
-  stripe trigger "$event" --api-key "$STRIPE_API_KEY" > "$tmp/$event.log"
+  stripe trigger "$event" > "$tmp/$event.log"
   echo "Triggered Stripe Test Mode fixture: $event"
 done
 
