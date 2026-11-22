@@ -58,6 +58,7 @@ Create a file outside the repository containing exactly one HTTPS webhook URL fo
 install -m 600 /dev/null /secure/path/financeflow-alertmanager-webhook-url
 # Populate the file through your secrets manager; do not paste the URL in shell history.
 # The file must contain one HTTPS URL and have mode 600 or 400.
+# The file must contain one HTTPS URL and have mode 600 or 400.
 export ALERTMANAGER_WEBHOOK_URL_FILE=/secure/path/financeflow-alertmanager-webhook-url
 bash scripts/ops/validate-alertmanager-secret.sh
 ```
