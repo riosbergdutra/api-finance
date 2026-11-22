@@ -7,6 +7,7 @@ command -v docker >/dev/null
 command -v pg_restore >/dev/null
 command -v psql >/dev/null
 command -v sha256sum >/dev/null
+command -v openssl >/dev/null
 
 container="financeflow-restore-drill-$$"
 password="$(openssl rand -hex 24)"
