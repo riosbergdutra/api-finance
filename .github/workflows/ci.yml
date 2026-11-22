@@ -59,7 +59,7 @@ jobs:
           done
       - name: Validate Alertmanager configuration and Compose overlay
         run: |
-          printf 'https://example.invalid/alertmanager-webhook\\n' > /tmp/financeflow-alertmanager-webhook-url
+          printf '%s' 'https://example.invalid/alertmanager-webhook' > /tmp/financeflow-alertmanager-webhook-url
           chmod 600 /tmp/financeflow-alertmanager-webhook-url
           ALERTMANAGER_WEBHOOK_URL_FILE=/tmp/financeflow-alertmanager-webhook-url \
             docker compose -f compose.yaml -f compose.alertmanager.yaml config --quiet
