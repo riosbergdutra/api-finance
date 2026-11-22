@@ -63,12 +63,6 @@ jobs:
           chmod 600 /tmp/financeflow-alertmanager-webhook-url
           ALERTMANAGER_WEBHOOK_URL_FILE=/tmp/financeflow-alertmanager-webhook-url \
             bash scripts/ops/validate-alertmanager-secret.sh
-      - name: Validate Alertmanager receiver secret guard
-        run: |
-          printf '%s' 'https://example.invalid/alertmanager-webhook' > /tmp/financeflow-alertmanager-webhook-url
-          chmod 600 /tmp/financeflow-alertmanager-webhook-url
-          ALERTMANAGER_WEBHOOK_URL_FILE=/tmp/financeflow-alertmanager-webhook-url \
-            bash scripts/ops/validate-alertmanager-secret.sh
       - name: Validate Alertmanager configuration and Compose overlay
         run: |
           printf '%s' 'https://example.invalid/alertmanager-webhook' > /tmp/financeflow-alertmanager-webhook-url
