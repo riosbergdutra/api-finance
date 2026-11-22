@@ -55,7 +55,7 @@ pg_restore --exit-on-error --no-owner --no-acl \
   --dbname=finance_restore_drill "$SANITIZED_BACKUP_FILE"
 
 version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
-  -c "SELECT COALESCE(MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::int END), 0) FROM flyway_schema_history WHERE success = true;"
+  -c "SELECT COALESCE(MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::int END), 0) FROM flyway_schema_history WHERE success = true;")"
 [[ "$version" == "2" ]] || {
   echo "Expected a sanitized pre-V3 snapshot (latest successful numeric Flyway version 2); found '$version'. No migration was run." >&2
   exit 5
@@ -87,7 +87,7 @@ docker run --rm \
   flyway/flyway:10.20.1 migrate
 
 final_version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
-  -c "SELECT MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::int END) FROM flyway_schema_history WHERE success = true;"
+  -c "SELECT MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::int END) FROM flyway_schema_history WHERE success = true;")"
 [[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
 
 unset PGPASSWORD password
