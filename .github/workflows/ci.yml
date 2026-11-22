@@ -39,18 +39,18 @@ jobs:
             nginx:1.27-alpine nginx -t
       - name: Validate Prometheus configuration and alert rules
         run: |
-          docker run --rm \\
-            -v "$PWD/prometheus:/etc/prometheus:ro" \\
-            prom/prometheus:v2.52.0 \\
+          docker run --rm \
+            -v "$PWD/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v2.52.0 \
             promtool check config /etc/prometheus/prometheus.yml
-          docker run --rm \\
-            -v "$PWD/prometheus:/etc/prometheus:ro" \\
-            prom/prometheus:v2.52.0 \\
+          docker run --rm \
+            -v "$PWD/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v2.52.0 \
             promtool check rules /etc/prometheus/alerts.yml
       - name: Validate k6 load-test script syntax
         run: |
-          docker run --rm \\
-            -v "$PWD/performance:/scripts:ro" \\
+          docker run --rm \
+            -v "$PWD/performance:/scripts:ro" \
             grafana/k6:0.54.0 inspect /scripts/k6/readiness.js
       - name: Build production container image
         run: docker build --pull --tag financeflow-backend:${{ github.sha }} .
