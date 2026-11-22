@@ -53,7 +53,10 @@ jobs:
             -v "$PWD/performance:/scripts:ro" \
             grafana/k6:0.54.0 inspect /scripts/k6/readiness.js
       - name: Validate operations shell scripts
-        run: bash -n scripts/ops/*.sh
+        run: |
+          for script in scripts/ops/*.sh; do
+            bash -n "$script"
+          done
       - name: Validate Alertmanager configuration and Compose overlay
         run: |
           printf 'https://example.invalid/alertmanager-webhook\\n' > /tmp/financeflow-alertmanager-webhook-url
