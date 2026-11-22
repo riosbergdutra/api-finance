@@ -31,18 +31,19 @@ SANITIZED_BACKUP_FILE=/absolute/path/finance-sanitized-v2.dump \
   bash scripts/ops/restore-and-migrate-drill.sh
 ```
 
-The script creates one uniquely named disposable PostgreSQL 16 container, uses an ephemeral anonymous data volume, restores into `finance_restore_drill`, requires the latest successful numeric Flyway version to be exactly 2, validates and applies migrations from the repository, and requires V9 at the end. It removes only the container it created. It does not run `docker compose down`, prune volumes, or connect to the user's existing Postgres container.
+The script creates one uniquely named disposable PostgreSQL 16 container, uses only the new container's disposable writable layer, restores into `finance_restore_drill`, requires the latest successful numeric Flyway version to be exactly 2, validates and applies migrations from the repository, and requires V9 at the end. It removes only the container it created. It does not run `docker compose down`, prune volumes, or connect to the user's existing Postgres container.
 
 This rehearses the schema transition on a sanitized representative copy. It does not replace application-level checks of V5 transfer/balance invariants, V6 duplicate-data assumptions, row counts and financial reconciliation. Capture those results before declaring migration readiness. If the backup is not a V2 snapshot, the script stops before migration.
 
 ## 3. Stripe Test Mode webhooks
 
 Configure the staging backend with its Stripe **test** API key and the signing secret belonging to the registered Test Mode webhook endpoint. Register the exact staging webhook URL in the Stripe test account. Configure GitHub Environment secrets:
+- `STAGING_BASE_URL`: staging backend HTTPS origin (same host as the webhook URL);
 - `STRIPE_API_KEY` (must start with `sk_test_`);
 - `STRIPE_WEBHOOK_ENDPOINT_ID`;
 - `STRIPE_WEBHOOK_ENDPOINT_URL` (exact HTTPS URL).
 
-The manual workflow can trigger `payment_intent.succeeded` and `customer.subscription.deleted` through Stripe CLI. The script first retrieves the endpoint and refuses to run unless it is enabled, Test Mode and matches the exact URL. After triggering, verify successful delivery (HTTP 2xx) in Stripe Workbench and verify application idempotency/state. CLI trigger acceptance alone is not proof that the backend processed the webhook.
+The manual workflow can trigger `payment_intent.succeeded` and `customer.subscription.deleted` through Stripe CLI. The script first retrieves the endpoint and refuses to run unless it is enabled, Test Mode, subscribed to both test event types, matches the exact URL, and shares the staging host. After triggering, verify successful delivery (HTTP 2xx) in Stripe Workbench and verify application idempotency/state. CLI trigger acceptance alone is not proof that the backend processed the webhook.
 
 Never add live keys or production signing secrets to GitHub Actions.
 
