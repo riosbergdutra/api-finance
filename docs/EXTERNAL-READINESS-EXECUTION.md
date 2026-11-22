@@ -27,9 +27,8 @@ Create a **sanitized custom-format backup from a disposable/staging copy at Flyw
 
 Run:
 ```bash
-chmod +x scripts/ops/restore-and-migrate-drill.sh
 SANITIZED_BACKUP_FILE=/absolute/path/finance-sanitized-v2.dump \
-  ./scripts/ops/restore-and-migrate-drill.sh
+  bash scripts/ops/restore-and-migrate-drill.sh
 ```
 
 The script creates one uniquely named disposable PostgreSQL 16 container, uses an ephemeral anonymous data volume, restores into `finance_restore_drill`, requires the latest successful numeric Flyway version to be exactly 2, validates and applies migrations from the repository, and requires V9 at the end. It removes only the container it created. It does not run `docker compose down`, prune volumes, or connect to the user's existing Postgres container.
