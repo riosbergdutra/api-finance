@@ -13,6 +13,11 @@ on:
         required: true
         default: false
         type: boolean
+      delete_keycloak_test_user:
+        description: Delete only the explicitly configured financeflow-it-* disposable Keycloak test user
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -38,7 +43,7 @@ jobs:
       KEYCLOAK_SMOKE_CLIENT_SECRET: ${{ secrets.KEYCLOAK_SMOKE_CLIENT_SECRET }}
       KEYCLOAK_API_AUDIENCE: ${{ secrets.KEYCLOAK_API_AUDIENCE }}
       KEYCLOAK_TEST_USER_ID: ${{ secrets.KEYCLOAK_TEST_USER_ID }}
-      KEYCLOAK_DELETE_TEST_USER: "false"
+      KEYCLOAK_DELETE_TEST_USER: ${{ inputs.delete_keycloak_test_user }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,10 +68,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install Stripe CLI
-        uses: stripe/stripe-cli-action@v1
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          stripe-api-key: ${{ secrets.STRIPE_API_KEY }}
+          node-version: "22"
+      - name: Install pinned Stripe CLI
+        run: npm install --global @stripe/cli@1.55.14
       - name: Trigger guarded Test Mode webhook fixtures
         run: bash scripts/ops/stripe-test-webhooks.sh
 
