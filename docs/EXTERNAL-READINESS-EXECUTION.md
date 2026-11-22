@@ -17,7 +17,7 @@ Required secrets:
 
 Run the manual GitHub Actions workflow **Staging external readiness**. It verifies TLS, OIDC discovery, JWKS, backend readiness, service-account access and the smoke client's issuer/audience claims. JWT claim decoding is not signature verification; the backend's resource-server validation remains the authoritative signature/issuer/audience check.
 
-For an explicitly disposable user, set `KEYCLOAK_TEST_USER_ID` and optionally `KEYCLOAK_DELETE_TEST_USER=true`. The script refuses deletion unless the username starts with `financeflow-it-`. Keep deletion disabled by default.
+For an explicitly disposable user, configure `KEYCLOAK_TEST_USER_ID` as an environment secret. The workflow input `delete_keycloak_test_user` defaults to false; only opt in after confirming the account is disposable. The script refuses deletion unless the username starts with `financeflow-it-`.
 
 The smoke workflow does not automate browser authorization-code login, PKCE/state, CSRF, refresh-token rotation, concurrent refresh, logout, multi-session revocation or WebSocket closure. Those require a browser E2E suite with disposable users and must be recorded separately before release.
 
@@ -49,7 +49,7 @@ Never add live keys or production signing secrets to GitHub Actions.
 
 ## 4. Staging load test
 
-The workflow has a separate opt-in input `run_load_test`, default false. It also exposes `delete_keycloak_test_user`, default false; this can delete only the explicitly supplied disposable account whose username is checked for the `financeflow-it-` prefix. It runs only when manually selected, uses the protected `financeflow-staging` environment, and starts at 5 VUs for 2 minutes against `STAGING_BASE_URL`. Keep the target on staging; do not use production. Stop if error rate, p95, database/Redis saturation or memory/GC crosses the agreed stop thresholds. Increase concurrency only after reviewing the first run and available headroom.
+The workflow has a separate opt-in input `run_load_test`, default false. It runs only when manually selected, uses the protected `financeflow-staging` environment, and starts at 5 VUs for 2 minutes against `STAGING_BASE_URL`. Keep the target on staging; do not use production. Stop if error rate, p95, database/Redis saturation or memory/GC crosses the agreed stop thresholds. Increase concurrency only after reviewing the first run and available headroom.
 
 ## 5. Alertmanager notification
 
@@ -64,6 +64,7 @@ Validate and start the opt-in Alertmanager profile:
 ```bash
 docker compose -f compose.yaml -f compose.alertmanager.yaml config --quiet
 docker compose -f compose.yaml -f compose.alertmanager.yaml --profile alerting up -d alertmanager
+docker compose -f compose.yaml -f compose.alertmanager.yaml restart prometheus
 ```
 
 Prometheus is configured to send firing/resolved alerts to `alertmanager:9093`. The receiver URL is mounted as a Docker secret and is not stored in Git. Confirm Alertmanager shows the receiver, trigger a controlled test alert in staging, and confirm delivery at the destination. The destination must accept Prometheus Alertmanager's generic webhook JSON payload.
