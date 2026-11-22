@@ -6,6 +6,7 @@ services:
       - "127.0.0.1:9093:9093"
     volumes:
       - ./ops/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
     secrets:
       - alertmanager_webhook_url
     command:
@@ -13,6 +14,9 @@ services:
       - "--web.listen-address=0.0.0.0:9093"
       - "--storage.path=/alertmanager"
     restart: unless-stopped
+
+volumes:
+  alertmanager_data:
 
 secrets:
   alertmanager_webhook_url:
