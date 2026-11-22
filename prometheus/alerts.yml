@@ -2,7 +2,7 @@ groups:
   - name: financeflow-availability
     rules:
       - alert: FinanceBackendScrapeMissing
-        expr: up{job="finance-backend"} == 0
+        expr: up{job="finance-backend"} == 0 or absent(up{job="finance-backend"})
         for: 2m
         labels:
           severity: critical
@@ -15,7 +15,7 @@ groups:
           (
             sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
             /
-            clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1)
+            clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1e-9)
           ) > 0.05
         for: 5m
         labels:
@@ -47,10 +47,10 @@ groups:
           description: HikariCP has pending connection borrowers; inspect query latency and pool saturation.
 
       - alert: FinanceRedisScrapeMissing
-        expr: up{job="redis"} == 0
+        expr: up{job="redis"} == 0 or absent(up{job="redis"})
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: Redis exporter scrape is unavailable
+          summary: Finance Redis exporter scrape is unavailable
           description: Prometheus cannot scrape Redis exporter metrics for at least two minutes.
