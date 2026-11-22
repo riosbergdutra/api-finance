@@ -9,19 +9,22 @@ command -v psql >/dev/null
 command -v sha256sum >/dev/null
 command -v openssl >/dev/null
 
-container="financeflow-restore-drill-$$"
+container="financeflow-restore-drill-$(openssl rand -hex 8)"
 password="$(openssl rand -hex 24)"
 port=""
-
-cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT INT TERM
+created=0
 
 if docker ps -a --format '{{.Names}}' | grep -Fxq "$container"; then
   echo "Refusing to reuse existing container name: $container" >&2
   exit 3
 fi
+
+cleanup() {
+  if [[ "$created" == "1" ]]; then
+    docker rm -f "$container" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT INT TERM
 
 echo "Backup SHA-256:"
 sha256sum "$SANITIZED_BACKUP_FILE"
@@ -32,6 +35,7 @@ docker run --detach --rm \
   --env POSTGRES_DB=postgres \
   --publish 127.0.0.1::5432 \
   postgres:16 >/dev/null
+created=1
 
 port="$(docker port "$container" 5432/tcp | sed -n 's/.*://p' | head -n1)"
 [[ "$port" =~ ^[0-9]+$ ]] || { echo "Could not resolve isolated PostgreSQL port" >&2; exit 4; }
