@@ -125,7 +125,57 @@ docker run --rm \
   flyway/flyway:10.20.1 migrate
 
 final_version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
+  -c "SELECT MAX(CASE WHEN version ~ '^[0-9]+;")"
+[[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
+
+unset PGPASSWORD password
+echo "PASS: sanitized V2 backup restored and Flyway V3-V9 applied in disposable PostgreSQL."
+echo "The temporary container will now be removed; no existing Docker volume or database was touched."
+ THEN version::int END) FROM flyway_schema_history WHERE success = true;")"
+[[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
+
+unset PGPASSWORD password
+echo "PASS: sanitized V2 backup restored and Flyway V3-V9 applied in disposable PostgreSQL."
+echo "The temporary container will now be removed; no existing Docker volume or database was touched."
+ THEN version::int END), 0) FROM flyway_schema_history WHERE success = true;")"
+[[ "$version" == "2" ]] || {
+  echo "Expected a sanitized pre-V3 snapshot (latest successful numeric Flyway version 2); found '$version'. No migration was run." >&2
+  exit 5
+}
+
+failed="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
+  -c "SELECT count(*) FROM flyway_schema_history WHERE success = false;")"
+[[ "$failed" == "0" ]] || { echo "Restored Flyway history contains failed migrations" >&2; exit 6; }
+
+echo "Restore succeeded in a disposable PostgreSQL 16 container."
+echo "Running Flyway validate + migrate against the isolated restored copy only."
+
+docker run --rm \
+  --network "container:$container" \
+  --volume "$PWD/src/main/resources/db/migration:/flyway/sql:ro" \
+  --env FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/finance_restore_drill" \
+  --env FLYWAY_USER=postgres \
+  --env FLYWAY_PASSWORD="$password" \
+  --env FLYWAY_LOCATIONS=filesystem:/flyway/sql \
+  flyway/flyway:10.20.1 validate
+
+docker run --rm \
+  --network "container:$container" \
+  --volume "$PWD/src/main/resources/db/migration:/flyway/sql:ro" \
+  --env FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/finance_restore_drill" \
+  --env FLYWAY_USER=postgres \
+  --env FLYWAY_PASSWORD="$password" \
+  --env FLYWAY_LOCATIONS=filesystem:/flyway/sql \
+  flyway/flyway:10.20.1 migrate
+
+final_version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
   -c "SELECT MAX(version::int) FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$';")"
+[[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
+
+unset PGPASSWORD password
+echo "PASS: sanitized V2 backup restored and Flyway V3-V9 applied in disposable PostgreSQL."
+echo "The temporary container will now be removed; no existing Docker volume or database was touched."
+ THEN version::int END) FROM flyway_schema_history WHERE success = true;")"
 [[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
 
 unset PGPASSWORD password
