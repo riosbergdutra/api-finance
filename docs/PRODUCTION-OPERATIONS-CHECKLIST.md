@@ -27,9 +27,10 @@ Example custom-format backup:
 
 ```bash
 umask 077
+# Configure PGHOST, PGPORT, PGDATABASE and PGUSER in the environment.
+# Supply the password only through a protected PGPASSFILE (chmod 600).
 pg_dump --format=custom --no-owner --no-acl \
-  --file="finance-$(date +%Y%m%d-%H%M%S).dump" \
-  "$DATABASE_URL"
+  --file="finance-$(date +%Y%m%d-%H%M%S).dump"
 pg_restore --list finance-YYYYMMDD-HHMMSS.dump
 sha256sum finance-YYYYMMDD-HHMMSS.dump
 ```
