@@ -23,7 +23,7 @@ The smoke workflow does not automate browser authorization-code login, PKCE/stat
 
 ## 2. Isolated PostgreSQL restore and V1–V9 rehearsal
 
-Create a **sanitized custom-format backup from a disposable/staging copy at Flyway V2**. Never pass a production backup or point this script at a running application database.
+Create a **sanitized custom-format backup from a disposable/staging copy at Flyway V2**. Never pass a production backup or point this script at a running application database. The host needs Docker, OpenSSL, and PostgreSQL 16-compatible client tools (`pg_restore`, `psql`, `createdb`).
 
 Run:
 ```bash
@@ -49,7 +49,7 @@ Never add live keys or production signing secrets to GitHub Actions.
 
 ## 4. Staging load test
 
-The workflow has a separate opt-in input `run_load_test`, default false. It runs only when manually selected, uses the protected `financeflow-staging` environment, and starts at 5 VUs for 2 minutes against `STAGING_BASE_URL`. Keep the target on staging; do not use production. Stop if error rate, p95, database/Redis saturation or memory/GC crosses the agreed stop thresholds. Increase concurrency only after reviewing the first run and available headroom.
+The workflow has a separate opt-in input `run_load_test`, default false. It also exposes `delete_keycloak_test_user`, default false; this can delete only the explicitly supplied disposable account whose username is checked for the `financeflow-it-` prefix. It runs only when manually selected, uses the protected `financeflow-staging` environment, and starts at 5 VUs for 2 minutes against `STAGING_BASE_URL`. Keep the target on staging; do not use production. Stop if error rate, p95, database/Redis saturation or memory/GC crosses the agreed stop thresholds. Increase concurrency only after reviewing the first run and available headroom.
 
 ## 5. Alertmanager notification
 
