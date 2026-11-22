@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 set +x
 
+: "${STAGING_BASE_URL:?Set STAGING_BASE_URL to the staging origin}"
 : "${STRIPE_API_KEY:?Set STRIPE_API_KEY to a Stripe test secret key}"
 : "${STRIPE_WEBHOOK_ENDPOINT_ID:?Set the registered Stripe Test Mode webhook endpoint ID}"
 : "${STRIPE_WEBHOOK_ENDPOINT_URL:?Set the exact HTTPS staging webhook endpoint URL}"
@@ -12,6 +13,10 @@ command -v jq >/dev/null
   echo "Refusing to run: STRIPE_API_KEY must begin with sk_test_" >&2
   exit 3
 }
+[[ "$STAGING_BASE_URL" == https://* ]] || {
+  echo "Refusing to run: STAGING_BASE_URL must use HTTPS" >&2
+  exit 4
+}
 [[ "$STRIPE_WEBHOOK_ENDPOINT_URL" == https://* ]] || {
   echo "Refusing to run: webhook endpoint URL must use HTTPS" >&2
   exit 4
@@ -21,9 +26,16 @@ tmp="$(mktemp -d)"
 chmod 700 "$tmp"
 trap 'rm -rf "$tmp"' EXIT
 
+staging_host="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).netloc)' "$STAGING_BASE_URL")"
+webhook_host="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).netloc)' "$STRIPE_WEBHOOK_ENDPOINT_URL")"
+[[ "$staging_host" == "$webhook_host" ]] || {
+  echo "Refusing to run: Stripe webhook host must match the configured staging host" >&2
+  exit 6
+}
+
 export STRIPE_API_KEY
 stripe webhook_endpoints retrieve "$STRIPE_WEBHOOK_ENDPOINT_ID" > "$tmp/endpoint.json"
-jq -e --arg url "$STRIPE_WEBHOOK_ENDPOINT_URL" '.livemode == false and .url == $url and .status == "enabled"' \
+jq -e --arg url "$STRIPE_WEBHOOK_ENDPOINT_URL" '.livemode == false and .url == $url and .status == "enabled" and (.enabled_events | index("*") != null or (index("payment_intent.succeeded") != null and index("customer.subscription.deleted") != null))' \
   "$tmp/endpoint.json" >/dev/null || {
     echo "Refusing to trigger events: endpoint must be enabled, Test Mode, and match the exact staging URL." >&2
     exit 5
