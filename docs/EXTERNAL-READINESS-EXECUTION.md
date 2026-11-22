@@ -33,7 +33,7 @@ SANITIZED_BACKUP_FILE=/absolute/path/finance-sanitized-v2.dump \
 
 The script creates one uniquely named disposable PostgreSQL 16 container, uses only the new container's disposable writable layer, restores into `finance_restore_drill`, requires the latest successful numeric Flyway version to be exactly 2, validates and applies migrations from the repository, and requires V9 at the end. It removes only the container it created. It does not run `docker compose down`, prune volumes, or connect to the user's existing Postgres container.
 
-This rehearses the schema transition on a sanitized representative copy. It does not replace application-level checks of V5 transfer/balance invariants, V6 duplicate-data assumptions, row counts and financial reconciliation. Capture those results before declaring migration readiness. If the backup is not a V2 snapshot, the script stops before migration.
+After V3–V9, the drill also asserts the critical V4–V9 tables/columns, V5 non-null transfer flag, V6 unique index and absence of duplicate Stripe subscription IDs. This is a structural/data-integrity smoke check, not a full reconciliation of historical transfer balances, account ownership, subscription lifecycle or financial totals. Capture representative row counts and application-level financial reconciliation before declaring migration readiness. If the backup is not a V2 snapshot, the script stops before migration.
 
 ## 3. Stripe Test Mode webhooks
 
@@ -57,8 +57,7 @@ Create a file outside the repository containing exactly one HTTPS webhook URL fo
 ```bash
 install -m 600 /dev/null /secure/path/financeflow-alertmanager-webhook-url
 # Populate the file through your secrets manager; do not paste the URL in shell history.
-# The file must contain one HTTPS URL and have mode 600 or 400.
-# The file must contain one HTTPS URL and have mode 600 or 400.
+# Keep the file private (mode 600 or 400); never print its contents.
 export ALERTMANAGER_WEBHOOK_URL_FILE=/secure/path/financeflow-alertmanager-webhook-url
 bash scripts/ops/validate-alertmanager-secret.sh
 ```
