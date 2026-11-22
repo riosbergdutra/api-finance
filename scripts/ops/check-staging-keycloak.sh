@@ -33,7 +33,8 @@ echo "PASS: FinanceFlow staging readiness endpoint is healthy over verified HTTP
 
 host="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).hostname)' "$issuer")"
 fetch_client_token() {
-  local client_id="$1" client_secret="$2" prefix="$3" netrc="$tmp/$prefix.netrc" response="$tmp/$prefix-token.json"
+  local client_id="$1" client_secret="$2" prefix="$3"
+  local netrc="$tmp/$prefix.netrc" response="$tmp/$prefix-token.json"
   printf 'machine %s login %s password %s\n' "$host" "$client_id" "$client_secret" > "$netrc"
   chmod 600 "$netrc"
   curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
