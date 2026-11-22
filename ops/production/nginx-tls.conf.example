@@ -1,49 +1,51 @@
-# Example only. Install reviewed certificates as read-only runtime secrets.
-# Keep this file separate from the development nginx/nginx.conf.
-upstream finance_backend {
-    server finance-app:8080;
-    keepalive 32;
-}
+events {}
 
-server {
-    listen 80;
-    server_name finance.example.com;
-    return 308 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name finance.example.com;
-
-    ssl_certificate     /run/secrets/tls_fullchain.pem;
-    ssl_certificate_key /run/secrets/tls_privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:TLS:10m;
-    ssl_session_tickets off;
-
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header Referrer-Policy strict-origin-when-cross-origin always;
-    add_header X-Frame-Options DENY always;
-
-    client_max_body_size 10m;
-
-    location / {
-        proxy_pass http://finance_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 75s;
+http {
+    upstream finance_backend {
+        server finance-app:8080;
+        keepalive 32;
     }
 
-    # Do not publish Prometheus, Actuator metrics, or admin endpoints here.
-    location ^~ /actuator/ {
-        return 404;
+    server {
+        listen 80;
+        server_name finance.example.com;
+        return 308 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        http2 on;
+        server_name finance.example.com;
+
+        ssl_certificate     /run/secrets/tls_fullchain.pem;
+        ssl_certificate_key /run/secrets/tls_privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_session_timeout 1d;
+        ssl_session_cache shared:TLS:10m;
+        ssl_session_tickets off;
+
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options DENY always;
+
+        client_max_body_size 10m;
+
+        location / {
+            proxy_pass http://finance_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 75s;
+        }
+
+        # Do not publish Prometheus, Actuator metrics, or admin endpoints here.
+        location ^~ /actuator/ {
+            return 404;
+        }
     }
 }
