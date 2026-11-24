@@ -85,6 +85,7 @@ docker run --rm \
   --env FLYWAY_USER=postgres \
   --env FLYWAY_PASSWORD="$password" \
   --env FLYWAY_LOCATIONS=filesystem:/flyway/sql \
+  --env FLYWAY_IGNORE_MIGRATION_PATTERNS='*:pending' \
   flyway/flyway:10.20.1 validate
 
 docker run --rm \
