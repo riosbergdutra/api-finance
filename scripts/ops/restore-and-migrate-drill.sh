@@ -56,9 +56,13 @@ done
 
 export PGPASSWORD="$password"
 createdb -h 127.0.0.1 -p "$port" -U postgres finance_restore_drill
-pg_restore --exit-on-error --no-owner --no-acl \
-  --host=127.0.0.1 --port="$port" --username=postgres \
-  --dbname=finance_restore_drill "$SANITIZED_BACKUP_FILE"
+docker run --rm \
+  --network "container:$container" \
+  --volume "$SANITIZED_BACKUP_FILE:/backup.dump:ro" \
+  --env PGPASSWORD="$password" \
+  postgres:16 pg_restore --exit-on-error --no-owner --no-acl \
+    --host=127.0.0.1 --port=5432 --username=postgres \
+    --dbname=finance_restore_drill /backup.dump
 
 version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
   -c "SELECT COALESCE(MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::int END), 0) FROM flyway_schema_history WHERE success = true;")"
