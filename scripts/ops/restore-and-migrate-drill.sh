@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+set +x
 
 : "${SANITIZED_BACKUP_FILE:?Set SANITIZED_BACKUP_FILE to a sanitized custom-format pg_dump created at Flyway V2}"
 [[ -f "$SANITIZED_BACKUP_FILE" ]] || { echo "Backup file not found" >&2; exit 2; }
-command -v docker >/dev/null
-command -v pg_restore >/dev/null
-command -v psql >/dev/null
-command -v sha256sum >/dev/null
-command -v openssl >/dev/null
+for command_name in docker pg_restore psql createdb sha256sum openssl; do
+  command -v "$command_name" >/dev/null || {
+    echo "Required command not found: $command_name" >&2
+    exit 2
+  }
+done
 
 container="financeflow-restore-drill-$(openssl rand -hex 8)"
 password="$(openssl rand -hex 24)"
@@ -24,7 +26,9 @@ cleanup() {
     docker rm -f "$container" >/dev/null 2>&1 || true
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "Backup SHA-256:"
 sha256sum "$SANITIZED_BACKUP_FILE"
@@ -40,13 +44,15 @@ created=1
 port="$(docker port "$container" 5432/tcp | sed -n 's/.*://p' | head -n1)"
 [[ "$port" =~ ^[0-9]+$ ]] || { echo "Could not resolve isolated PostgreSQL port" >&2; exit 4; }
 
+ready=0
 for attempt in $(seq 1 60); do
   if docker exec "$container" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+    ready=1
     break
   fi
   sleep 2
 done
-docker exec "$container" pg_isready -U postgres -d postgres >/dev/null
+[[ "$ready" == "1" ]] || { echo "Disposable PostgreSQL did not become ready" >&2; exit 4; }
 
 export PGPASSWORD="$password"
 createdb -h 127.0.0.1 -p "$port" -U postgres finance_restore_drill
@@ -87,12 +93,15 @@ docker run --rm \
   flyway/flyway:10.20.1 migrate
 
 final_version="$(psql -X -A -t -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill \
-  -c "SELECT COALESCE(MAX(CASE WHEN version ~ '^[0-9]+
-[[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
+  -c "SELECT COALESCE(MAX(CASE WHEN version ~ '^[0-9]+$' THEN version::int END), 0) FROM flyway_schema_history WHERE success = true;")"
+[[ "$final_version" == "9" ]] || {
+  echo "Expected Flyway V9 after migration; found '$final_version'" >&2
+  exit 7
+}
 
 echo "Checking critical schema and data invariants from migrations V3-V9."
 psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$port" -U postgres -d finance_restore_drill <<'SQL'
-DO $
+DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -151,14 +160,8 @@ BEGIN
         RAISE EXCEPTION 'V9 invariant failed: shedlock table missing';
     END IF;
 END
-$;
+$$;
 SQL
-
-unset PGPASSWORD password
-echo "PASS: sanitized V2 backup restored and Flyway V3-V9 applied in disposable PostgreSQL."
-echo "The temporary container will now be removed; no existing Docker volume or database was touched."
- THEN version::int END), 0) FROM flyway_schema_history WHERE success = true;")"
-[[ "$final_version" == "9" ]] || { echo "Expected Flyway V9 after migration; found '$final_version'" >&2; exit 7; }
 
 unset PGPASSWORD password
 echo "PASS: sanitized V2 backup restored and Flyway V3-V9 applied in disposable PostgreSQL."
