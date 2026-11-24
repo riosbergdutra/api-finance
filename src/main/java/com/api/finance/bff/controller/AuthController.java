@@ -7,6 +7,7 @@ import com.api.finance.bff.service.AuthService;
 import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
@@ -84,8 +86,9 @@ public class AuthController {
             limparSessionCookie(response);
             return ResponseEntity.noContent().build();
         } catch (RuntimeException unavailable) {
-            // Remove the browser's copy even if Redis is unavailable. The 503
-            // makes clear that server-side revocation could not be confirmed.
+            // Do not log session identifiers, cookies, tokens or credentials.
+            log.error("Falha no logout BFF. Tipo da exceção: {}",
+                    unavailable.getClass().getSimpleName());
             limparSessionCookie(response);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }

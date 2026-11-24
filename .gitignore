@@ -34,3 +34,8 @@ build/
 **/application.yaml
 src/main/resources/application-dev.yml
 src/main/resources/application-dev.yaml
+
+# Local credentials and environment files
+.env
+.env.*
+!.env.example

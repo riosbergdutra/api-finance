@@ -94,7 +94,8 @@ public class AccountService {
     public AccountResponse update(UUID accountId, UpdateAccountRequest request, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Account account = accountRepository.findByIdAndUserId(accountId, userId)
+        // Evita sobrescrever saldo atualizado concorrentemente por lançamentos financeiros.
+        Account account = accountRepository.findByIdAndUserIdForUpdate(accountId, userId)
                 .orElseThrow(() -> new AccountNotFoundException(
                         "Conta não encontrada: " + accountId));
 
