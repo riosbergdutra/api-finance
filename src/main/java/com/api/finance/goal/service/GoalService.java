@@ -9,8 +9,7 @@ import com.api.finance.goal.exception.GoalNotFoundException;
 import com.api.finance.goal.model.Goal;
 import com.api.finance.goal.repository.GoalRepository;
 import com.api.finance.shared.exception.ResourceNotFoundException;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,7 +28,7 @@ import java.util.UUID;
 public class GoalService {
 
     private final GoalRepository goalRepository;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
     private final ApplicationEventPublisher eventPublisher;  // NOVO: injeta o publisher
 
     @Transactional(readOnly = true)
@@ -69,7 +68,7 @@ public class GoalService {
     public GoalResponse atualizar(UUID id, CreateGoalRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         if (goal.isConcluida()) {
@@ -92,9 +91,8 @@ public class GoalService {
     @Transactional
     public GoalResponse depositar(UUID id, DepositRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        User user = resolveUser(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         if (goal.isConcluida()) {
@@ -115,7 +113,7 @@ public class GoalService {
         // FIX: publica evento APÓS salvar — listener executará só após o commit
         if (acabouDeConcluir) {
             eventPublisher.publishEvent(new FinanceEvents.MetaConcluidaEvent(
-                    user.getKeycloakId().toString(),
+                    caller.id().toString(),
                     userId,
                     saved.getId(),
                     saved.getNome(),
@@ -134,7 +132,7 @@ public class GoalService {
     public GoalResponse sacar(UUID id, DepositRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         BigDecimal novoValor = goal.getValorAtual().subtract(req.valor());
@@ -155,9 +153,8 @@ public class GoalService {
     @Transactional
     public GoalResponse concluir(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        User user = resolveUser(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         boolean jaConcluida = goal.isConcluida();
@@ -167,7 +164,7 @@ public class GoalService {
         // Só notifica se acabou de concluir agora
         if (!jaConcluida) {
             eventPublisher.publishEvent(new FinanceEvents.MetaConcluidaEvent(
-                    user.getKeycloakId().toString(),
+                    caller.id().toString(),
                     userId,
                     saved.getId(),
                     saved.getNome(),
@@ -181,7 +178,7 @@ public class GoalService {
     @Transactional
     public void deletar(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
         goalRepository.delete(goal);
     }
@@ -210,15 +207,12 @@ public class GoalService {
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 
     /**
      * Resolve o User completo (necessário para obter keycloakId como String para o evento).
      */
-    private User resolveUser(AuthenticatedUser caller) {
-        return userRepository.findByKeycloakId(caller.id())
-                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
-    }
+
 }

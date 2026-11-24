@@ -1,19 +1,29 @@
 package com.api.finance.scheduler;
 
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;
+import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-/**
- * Habilita @Scheduled no contexto Spring.
- *
- * Os jobs rodam em Virtual Threads pois o executor padrão do Spring
- * herda o executor configurado em FinanceApplication (TomcatProtocolHandlerCustomizer).
- *
- * Para produção com múltiplas instâncias: substitua @Scheduled por Quartz
- * com JobStoreTX (PostgreSQL) para garantir que cada job rode apenas uma vez
- * mesmo com N instâncias do app ativas simultaneamente.
- */
+import javax.sql.DataSource;
+
 @Configuration
+@ConditionalOnProperty(prefix = "spring.task.scheduling", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableScheduling
+@EnableSchedulerLock(defaultLockAtMostFor = "PT4H")
 public class SchedulerConfig {
+
+    @Bean
+    public LockProvider lockProvider(DataSource dataSource) {
+        return new JdbcTemplateLockProvider(
+                JdbcTemplateLockProvider.Configuration.builder()
+                        .withJdbcTemplate(new JdbcTemplate(dataSource))
+                        .usingDbTime()
+                        .build()
+        );
+    }
 }

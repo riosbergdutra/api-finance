@@ -4,6 +4,9 @@ import com.api.finance.transaction.model.Transaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -28,6 +31,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             Pageable pageable);
 
     Optional<Transaction> findByIdAndUserId(UUID id, UUID userId);
+
+    /** Serializa edições/exclusões concorrentes do mesmo lançamento financeiro. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.id = :id AND t.userId = :userId")
+    Optional<Transaction> findByIdAndUserIdForUpdate(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId);
+
 
     @Query("""
         SELECT COALESCE(SUM(t.valor), 0) FROM Transaction t
@@ -79,6 +90,42 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("ate") LocalDate ate);
 
     boolean existsByHashDeduplicacao(String hash);
+
+    /**
+     * Insere a transação somente se a impressão digital ainda não existir.
+     * A restrição UNIQUE do PostgreSQL é a autoridade final sob concorrência:
+     * duas requisições simultâneas não conseguem criar o mesmo lançamento.
+     *
+     * @return 1 quando inserida; 0 quando a impressão digital já existia.
+     */
+    @Modifying
+    @Query(value = """
+        INSERT INTO transactions
+            (id, user_id, account_id, conta_destino_id, category_id, tipo, status,
+             valor, descricao, estabelecimento, data, hash_deduplicacao,
+             transfer_destination_applied, created_at, updated_at)
+        VALUES
+            (:id, :userId, :accountId, :destinationAccountId, :categoryId, :type, :status,
+             :amount, :description, :merchant, :date, :fingerprint,
+             :destinationBalanceApplied, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (hash_deduplicacao) DO NOTHING
+        """, nativeQuery = true)
+    int insertIfFingerprintAbsent(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId,
+            @Param("accountId") UUID accountId,
+            @Param("destinationAccountId") UUID destinationAccountId,
+            @Param("categoryId") UUID categoryId,
+            @Param("type") String type,
+            @Param("status") String status,
+            @Param("amount") BigDecimal amount,
+            @Param("description") String description,
+            @Param("merchant") String merchant,
+            @Param("date") LocalDate date,
+            @Param("fingerprint") String fingerprint,
+            @Param("destinationBalanceApplied") boolean destinationBalanceApplied
+    );
+
 
     @Query("""
         SELECT COUNT(t) FROM Transaction t

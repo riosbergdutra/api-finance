@@ -64,7 +64,7 @@ public class StripePaymentInitiationService {
                 .build();
 
         PaymentIntent intent = PaymentIntent.create(params);
-        log.info("[Stripe] PaymentIntent criado: id={} clientSecret={}", intent.getId(), intent.getClientSecret());
+        log.info("[Stripe] PaymentIntent criado: id={}", intent.getId());
 
         return new PaymentIntentResponse(intent.getId(), intent.getClientSecret());
     }

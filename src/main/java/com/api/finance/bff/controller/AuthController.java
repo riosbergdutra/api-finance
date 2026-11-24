@@ -1,54 +1,97 @@
 package com.api.finance.bff.controller;
 
-import com.api.finance.bff.dto.AuthResponseDTO; // IMPORT CORRETO
+import com.api.finance.bff.dto.AuthResponseDTO;
+import com.api.finance.bff.exceptions.AuthIntegrationException;
+import com.api.finance.bff.exceptions.SessionNotFoundException;
 import com.api.finance.bff.service.AuthService;
+import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.time.Duration;
+import java.util.UUID;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
 
+    @Value("${app.cookies.secure:true}")
+    private boolean secureCookies;
+
+    @Value("${app.cookies.same-site:Lax}")
+    private String cookieSameSite;
+
+    @Value("${app.frontend-url:http://localhost:4200}")
+    private String frontendUrl;
+
+    @GetMapping("/session")
+    public ResponseEntity<Map<String, Boolean>> session() {
+        return ResponseEntity.ok(Map.of("authenticated", true));
+    }
+
+    @GetMapping("/csrf")
+    public CsrfToken csrf(CsrfToken csrfToken) {
+        return csrfToken;
+    }
+
     @GetMapping("/login")
-    public ResponseEntity<Void> login() {
-        return ResponseEntity.status(HttpStatus.FOUND) // 302
-                .header(HttpHeaders.LOCATION, authService.gerarUrlLogin())
+    public ResponseEntity<Void> login(HttpServletResponse response) {
+        String flowId = UUID.randomUUID().toString();
+        OAuthLoginAttemptStore.LoginAttempt attempt = authService.iniciarLogin(flowId);
+        adicionarFlowCookie(response, flowId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, authService.gerarUrlLogin(attempt))
                 .build();
     }
 
-    // Keycloak redireciona via GET por padrão
-    @PostMapping("/callback")
-    public ResponseEntity<AuthResponseDTO> callback(@RequestParam String code, HttpServletResponse response) {
-        AuthResponseDTO authResponse = authService.login(code);
-
+    // O callback é concluído no BFF; o navegador nunca recebe authorization code ou tokens.
+    @GetMapping("/callback")
+    public ResponseEntity<Void> callback(
+            @RequestParam String code,
+            @RequestParam String state,
+            @CookieValue(name = "OAUTH_FLOW", required = false) String flowId,
+            HttpServletResponse response) {
+        AuthResponseDTO authResponse = authService.login(code, state, flowId);
         adicionarSessionCookie(response, authResponse.sessionId());
-
-        return ResponseEntity.ok(authResponse);
+        limparFlowCookie(response);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(frontendUrl + "/auth/callback"))
+                .build();
     }
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-
-        if (sessionId != null) {
-            authService.logout(sessionId);
+        try {
+            if (sessionId != null) {
+                authService.logout(sessionId);
+            }
+            limparSessionCookie(response);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException unavailable) {
+            // Do not log session identifiers, cookies, tokens or credentials.
+            log.error("Falha no logout BFF. Tipo da exceção: {}",
+                    unavailable.getClass().getSimpleName());
+            limparSessionCookie(response);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
-
-        limparSessionCookie(response);
-        return ResponseEntity.noContent().build(); // 204
     }
 
     @DeleteMapping("/me")
@@ -56,11 +99,8 @@ public class AuthController {
             @AuthenticationPrincipal Jwt jwt,
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-
-        // O Service agora resolve tudo. O Controller só diz "VAI".
         authService.processarExclusaoConta(jwt, sessionId, response);
         limparSessionCookie(response);
-
         return ResponseEntity.noContent().build();
     }
 
@@ -68,35 +108,65 @@ public class AuthController {
     public ResponseEntity<AuthResponseDTO> refresh(
             @CookieValue(name = "SESSION_ID", required = false) String sessionId,
             HttpServletResponse response) {
-
-        if (sessionId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-
+        if (sessionId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         try {
             AuthResponseDTO authResponse = authService.refresh(sessionId);
             adicionarSessionCookie(response, authResponse.sessionId());
             return ResponseEntity.ok(authResponse);
-        } catch (RuntimeException e) {
-            // Se o Refresh Token no Keycloak expirou, limpa o cookie do usuário
+        } catch (SessionNotFoundException e) {
             limparSessionCookie(response);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        } catch (AuthIntegrationException e) {
+            // A temporary Keycloak/Redis integration failure must not erase a
+            // browser session that may still be valid.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
+    }
+
+    private void adicionarFlowCookie(HttpServletResponse response, String flowId) {
+        ResponseCookie cookie = ResponseCookie.from("OAUTH_FLOW", flowId)
+                .httpOnly(true)
+                .secure(secureCookies)
+                .path("/auth/callback")
+                .maxAge(Duration.ofMinutes(5))
+                .sameSite(cookieSameSite)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    private void limparFlowCookie(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from("OAUTH_FLOW", "")
+                .httpOnly(true)
+                .secure(secureCookies)
+                .path("/auth/callback")
+                .maxAge(Duration.ZERO)
+                .sameSite(cookieSameSite)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
     private void adicionarSessionCookie(HttpServletResponse response, String sessionId) {
         ResponseCookie cookie = ResponseCookie.from("SESSION_ID", sessionId)
                 .httpOnly(true)
-                .secure(false) // EM PRODUÇÃO: true
+                .secure(secureCookies)
                 .path("/")
                 .maxAge(Duration.ofDays(30))
-                .sameSite("Lax")
+                .sameSite(cookieSameSite)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
     private void limparSessionCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("SESSION_ID", "")
-                .maxAge(0)
+                .httpOnly(true)
+                .secure(secureCookies)
                 .path("/")
+                .maxAge(Duration.ZERO)
+                .sameSite(cookieSameSite)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }

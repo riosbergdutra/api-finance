@@ -2,14 +2,17 @@ package com.api.finance.config;
 
 import com.api.finance.account.exception.AccountNotFoundException;
 import com.api.finance.account.exception.DuplicateAccountNameException;
+import com.api.finance.export.exception.ExportLimitExceededException;
 import com.api.finance.bff.dto.ErrorResponseDTO;
 import com.api.finance.bff.exceptions.AuthIntegrationException;
 import com.api.finance.bff.exceptions.SessionNotFoundException;
+import com.api.finance.bff.repository.OAuthLoginAttemptStore;
 import com.api.finance.budget.exception.BudgetNotFoundException;
 import com.api.finance.category.exception.CategoryNotFoundException;
 import com.api.finance.goal.exception.GoalNotFoundException;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
+import com.api.finance.user.exception.UserIdentityDeletedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +42,16 @@ public class GlobalExceptionHandler {
         return buildResponse(message, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(ExportLimitExceededException.class)
+    public ResponseEntity<ErrorResponseDTO> handleExportLimit(ExportLimitExceededException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleNotImplemented(UnsupportedOperationException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.NOT_IMPLEMENTED);
+    }
+
     @ExceptionHandler(PlanLimitExceededException.class)
     public ResponseEntity<ErrorResponseDTO> handlePlanLimit(PlanLimitExceededException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.PAYMENT_REQUIRED);
@@ -47,6 +60,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(IllegalArgumentException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OAuthLoginAttemptStore.InvalidOAuthLoginAttemptException.class)
+    public ResponseEntity<ErrorResponseDTO> handleInvalidOAuthAttempt(
+            OAuthLoginAttemptStore.InvalidOAuthLoginAttemptException ex) {
+        return buildResponse("Tentativa de autenticação inválida ou expirada.", HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalStateException.class)
@@ -59,6 +78,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(SessionNotFoundException.class)
     public ResponseEntity<ErrorResponseDTO> handleSessionNotFound(SessionNotFoundException ex) {
         return buildResponse(ex.getMessage(), HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(UserIdentityDeletedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleDeletedIdentity(UserIdentityDeletedException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.GONE);
     }
 
     /** JWT inválido, expirado ou mal-formado */

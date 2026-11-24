@@ -1,0 +1,57 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/finance}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:password}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  flyway:
+    enabled: true
+
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: ${KEYCLOAK_CLIENT_ID:bff-codeflow}
+            client-secret: ${KEYCLOAK_CLIENT_SECRET:dev-only-change-me}
+            authorization-grant-type: authorization_code
+            redirect-uri: ${AUTH_REDIRECT_URI:http://localhost:8080/auth/callback}
+            client-authentication-method: client_secret_post
+        provider:
+          keycloak:
+            authorization-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/bff-codeflow}/protocol/openid-connect/auth
+            token-uri: ${KEYCLOAK_INTERNAL_URL:http://localhost:8180}/realms/bff-codeflow/protocol/openid-connect/token
+            user-info-uri: ${KEYCLOAK_INTERNAL_URL:http://localhost:8180}/realms/bff-codeflow/protocol/openid-connect/userinfo
+            jwk-set-uri: ${KEYCLOAK_INTERNAL_URL:http://localhost:8180}/realms/bff-codeflow/protocol/openid-connect/certs
+            user-name-attribute: sub
+
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/bff-codeflow}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:${KEYCLOAK_INTERNAL_URL:http://localhost:8180}/realms/bff-codeflow/protocol/openid-connect/certs}
+
+stripe:
+  api-key: ${STRIPE_API_KEY:sk_test_dev_placeholder}
+  price-id: ${STRIPE_PRICE_ID:price_dev_placeholder}
+  frontend-url: ${FRONTEND_URL:http://localhost:4200}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_dev_placeholder}
+  mode: test
+
+app:
+  keycloak:
+    issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/bff-codeflow}
+    backend-uri: ${KEYCLOAK_INTERNAL_URL:http://localhost:8180}/realms/bff-codeflow
+  frontend-url: ${FRONTEND_URL:http://localhost:4200}
+  auth:
+    redirect-uri: ${AUTH_REDIRECT_URI:http://localhost:8080/auth/callback}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  cookies:
+    secure: false
+    same-site: ${COOKIE_SAME_SITE:Lax}

@@ -76,6 +76,14 @@ public class Transaction {
     @Column(name = "hash_deduplicacao", unique = true, length = 64)
     private String hashDeduplicacao;
 
+    /**
+     * True somente quando esta aplicação creditou o saldo da conta de destino.
+     * False preserva a reversão segura de transferências históricas.
+     */
+    @Builder.Default
+    @Column(name = "transfer_destination_applied", nullable = false)
+    private boolean transferDestinationApplied = false;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private OffsetDateTime criadoEm;

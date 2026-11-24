@@ -1,0 +1,62 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:financeflow;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: financeflow-test
+            client-secret: test-secret
+            authorization-grant-type: authorization_code
+            redirect-uri: http://localhost:8080/auth/callback
+            scope: openid,profile,email
+        provider:
+          keycloak:
+            authorization-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/auth
+            token-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/token
+            user-info-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/userinfo
+            jwk-set-uri: http://localhost:8180/realms/financeflow/protocol/openid-connect/certs
+            user-name-attribute: sub
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/financeflow
+
+app:
+  bff:
+    redis-pubsub:
+      enabled: false
+  keycloak:
+    issuer-uri: http://localhost:8180/realms/financeflow
+  frontend-url: http://localhost:4200
+  auth:
+    redirect-uri: http://localhost:8080/auth/callback
+  cors:
+    allowed-origins: http://localhost:4200
+  cookies:
+    secure: false
+
+stripe:
+  api-key: sk_test_ci_placeholder
+  price-id: price_ci_placeholder
+  frontend-url: http://localhost:4200
+  webhook-secret: whsec_ci_placeholder
+  mode: test
+
+spring.task.scheduling.enabled: false

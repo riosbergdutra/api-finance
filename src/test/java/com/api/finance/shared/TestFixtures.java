@@ -114,7 +114,7 @@ public final class TestFixtures {
         return Notification.builder()
                 .id(NOTIFICATION_ID)
                 .userId(USER_ID)
-                .tipo(NotificationType.ORCAMENTO_ALERTA)
+                .tipo(NotificationType.ORCAMENTO_PROXIMO)
                 .titulo("Alerta de orçamento")
                 .mensagem("Você atingiu 80% do orçamento.")
                 .lida(false)

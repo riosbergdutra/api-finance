@@ -4,12 +4,10 @@ import com.api.finance.goal.model.Goal;
 import com.api.finance.goal.repository.GoalRepository;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.service.NotificationService;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.user.application.port.UserIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -18,8 +16,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * FIX: substituído userRepository.findAll() por paginação com PageRequest,
- * igual ao padrão adotado no BudgetAlertScheduler.
+ * A identidade dos usuários é obtida em lotes pelo contrato público UserDirectoryPort,
+ * sem expor a entidade JPA User ao scheduler.
  *
  * CRON: todo dia às 8h (horário de Brasília)
  */
@@ -30,11 +28,12 @@ public class GoalDeadlineScheduler {
 
     private static final int PAGE_SIZE = 100;
 
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
     private final GoalRepository goalRepository;
     private final NotificationService notificationService;
 
     @Scheduled(cron = "0 0 8 * * *", zone = "America/Sao_Paulo")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "goalDeadlineScheduler", lockAtMostFor = "PT4H", lockAtLeastFor = "PT30S")
     public void verificarPrazosDeMetAs() {
         log.info("[Scheduler] Verificando prazos de metas");
         LocalDate hoje  = LocalDate.now();
@@ -42,13 +41,13 @@ public class GoalDeadlineScheduler {
         int total = 0;
         int pagina = 0;
 
-        Page<User> paginaAtual;
+        List<UserIdentity> usuarios;
         do {
-            paginaAtual = userRepository.findAll(PageRequest.of(pagina, PAGE_SIZE));
+            usuarios = userDirectory.findPage(pagina, PAGE_SIZE);
 
-            for (User user : paginaAtual.getContent()) {
+            for (UserIdentity user : usuarios) {
                 try {
-                    List<Goal> metas = goalRepository.findByUserIdAndConcluidaFalse(user.getId());
+                    List<Goal> metas = goalRepository.findByUserIdAndConcluidaFalse(user.internalUserId());
                     for (Goal meta : metas) {
                         if (meta.getDataAlvo() == null) continue;
 
@@ -69,8 +68,8 @@ public class GoalDeadlineScheduler {
                             );
 
                             notificationService.criarNotificacao(
-                                    user.getKeycloakId().toString(),
-                                    user.getId(),
+                                    user.identityProviderUserId().toString(),
+                                    user.internalUserId(),
                                     NotificationType.META_PRAZO,
                                     titulo,
                                     mensagem,
@@ -81,11 +80,11 @@ public class GoalDeadlineScheduler {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("[Scheduler] Erro ao verificar metas userId={}: {}", user.getId(), e.getMessage());
+                    log.error("[Scheduler] Erro ao verificar metas userId={}: {}", user.internalUserId(), e.getMessage());
                 }
             }
             pagina++;
-        } while (paginaAtual.hasNext());
+        } while (usuarios.size() == PAGE_SIZE);
 
         log.info("[Scheduler] {} notificações de prazo de meta disparadas", total);
     }

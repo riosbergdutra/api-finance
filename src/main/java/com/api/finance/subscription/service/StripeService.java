@@ -1,10 +1,12 @@
 package com.api.finance.subscription.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -13,30 +15,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Integração com Stripe via Checkout Session (modo subscription).
- *
- * FLUXO COMPLETO:
- * 1. Frontend chama  POST /subscriptions/checkout
- * 2. Este service cria uma Checkout Session no Stripe
- * 3. Retorna { url } ao frontend
- * 4. Frontend faz  window.location.href = url
- * 5. Usuário paga na página hospedada pelo Stripe (cartão, PIX, boleto, etc.)
- * 6. Stripe redireciona para  successUrl  (ex: /app/subscription?success=true)
- * 7. Stripe dispara webhook  customer.subscription.updated  →  StripeWebhookService
- * 8. StripeWebhookService chama  subscriptionService.ativarPro(...)
- *
- * POR QUE CHECKOUT SESSION (e não PaymentIntent diretamente)?
- * - PaymentIntent retorna um clientSecret que precisa do Stripe Elements no frontend
- *   (npm install @stripe/stripe-js, form de cartão embutido, tratamento de 3DS...).
- * - Checkout Session devolve uma URL pronta — o Stripe cuida de tudo (formulário,
- *   3DS, PIX, boleto, Apple Pay, Google Pay, retry...).
- * - Para assinaturas recorrentes (mode=subscription), Checkout Session é o fluxo
- *   oficialmente recomendado pelo Stripe.
- *
- * CONFIGURAÇÃO NECESSÁRIA:
- *   stripe.api-key   = sk_test_...   (chave secreta, já está no application-dev.yml)
- *   stripe.price-id  = price_xxx     (criar em dashboard.stripe.com → Products → Prices)
- *   stripe.frontend-url = https://seusite.com  (para success/cancel URLs)
+ * Integração Stripe restrita ao ambiente de demonstração.
+ * Esta aplicação não pode processar cobranças reais nesta fase do produto.
  */
 @Service
 @RequiredArgsConstructor
@@ -54,33 +34,45 @@ public class StripeService {
     @Value("${stripe.frontend-url}")
     private String frontendUrl;
 
+    @Value("${stripe.mode:test}")
+    private String stripeMode;
+
     private static final String STRIPE_BASE = "https://api.stripe.com/v1";
 
-    // ── Checkout Session ───────────────────────────────────────────────────
-
     /**
-     * Cria uma Checkout Session para assinatura mensal recorrente (mode=subscription).
-     *
-     * O userId é passado no metadata da session — o webhook
-     * customer.subscription.updated recebe esse metadata e usa para ativar o PRO.
-     *
-     * @param userId ID do usuário interno
-     * @return URL da página de pagamento hospedada pelo Stripe
+     * Fail-closed: a aplicação não inicia a integração de billing se qualquer
+     * configuração indicar modo diferente de teste ou chave live.
      */
-    public String criarCheckoutSession(UUID userId) {
-        log.info("[Stripe] Criando Checkout Session para userId={}", userId);
+    @PostConstruct
+    void validarModoDemonstracao() {
+        if (!"test".equalsIgnoreCase(stripeMode)
+                || stripeApiKey == null
+                || !stripeApiKey.startsWith("sk_test_")) {
+            throw new IllegalStateException(
+                    "FinanceFlow está restrito ao Stripe Test Mode. Configure stripe.mode=test e uma chave sk_test_."
+            );
+        }
+        if (stripePriceId == null || !stripePriceId.startsWith("price_")) {
+            throw new IllegalStateException("Configure um Price ID válido do Stripe em modo de teste.");
+        }
+        log.info("Stripe configurado em modo de teste. Cobranças reais estão bloqueadas por configuração.");
+    }
 
-        // LinkedHashMap para preservar a ordem dos parâmetros form-encoded
+    public String criarCheckoutSession(UUID userId) {
+        if (!"test".equalsIgnoreCase(stripeMode) || !stripeApiKey.startsWith("sk_test_")) {
+            throw new IllegalStateException("Checkout indisponível: somente o Stripe Test Mode é permitido.");
+        }
+
+        log.info("[Stripe DEMO] Criando Checkout Session de teste para userId={}", userId);
+
         Map<String, Object> params = new LinkedHashMap<>();
-        params.put("mode",                              "subscription");
-        params.put("line_items[0][price]",              stripePriceId);
-        params.put("line_items[0][quantity]",           "1");
-        params.put("success_url",                       frontendUrl + "/app/subscription?success=true");
-        params.put("cancel_url",                        frontendUrl + "/app/subscription?canceled=true");
-        // metadata na session → disponível em checkout.session.completed
-        // e também propagada para a Subscription criada pelo Stripe
+        params.put("mode", "subscription");
+        params.put("line_items[0][price]", stripePriceId);
+        params.put("line_items[0][quantity]", "1");
+        params.put("success_url", frontendUrl + "/app/subscription?demo=success");
+        params.put("cancel_url", frontendUrl + "/app/subscription?demo=canceled");
         params.put("subscription_data[metadata][userId]", userId.toString());
-        params.put("metadata[userId]",                  userId.toString());
+        params.put("metadata[userId]", userId.toString());
 
         try {
             String response = restClient.post()
@@ -91,69 +83,54 @@ public class StripeService {
                     .retrieve()
                     .body(String.class);
 
-            String sessionId  = extractJsonValue(response, "\"id\"");
             String sessionUrl = extractJsonValue(response, "\"url\"");
-
-            log.info("[Stripe] Checkout Session criada: id={}", sessionId);
+            if (sessionUrl == null || !sessionUrl.startsWith("https://checkout.stripe.com/")) {
+                throw new IllegalStateException("Stripe não retornou uma URL de Checkout válida.");
+            }
+            log.info("[Stripe DEMO] Checkout Session de teste criada para userId={}", userId);
             return sessionUrl;
-
         } catch (Exception e) {
-            log.error("[Stripe] Erro ao criar Checkout Session: {}", e.getMessage());
-            throw new RuntimeException("Falha ao criar sessão de pagamento no Stripe", e);
+            log.error("[Stripe DEMO] Falha ao criar Checkout Session de teste: {}", e.getMessage());
+            throw new RuntimeException("Falha ao criar sessão demonstrativa no Stripe", e);
         }
     }
 
-    // ── Cancelamento ───────────────────────────────────────────────────────
-
-    /**
-     * Cancela uma subscription recorrente no Stripe.
-     * O Stripe mantém o acesso até o fim do período vigente (current_period_end).
-     * O webhook customer.subscription.deleted é disparado ao final do período.
-     */
     public void cancelarSubscription(String subscriptionId) {
-        log.info("[Stripe] Cancelando subscription id={}", subscriptionId);
-
+        if (!"test".equalsIgnoreCase(stripeMode) || !stripeApiKey.startsWith("sk_test_")) {
+            throw new IllegalStateException("Cancelamento Stripe indisponível fora do modo de teste.");
+        }
+        log.info("[Stripe DEMO] Cancelando subscription de teste id={}", subscriptionId);
         try {
             restClient.delete()
                     .uri(STRIPE_BASE + "/subscriptions/{id}", subscriptionId)
                     .header("Authorization", "Bearer " + stripeApiKey)
                     .retrieve()
-                    .body(String.class);
-
-            log.info("[Stripe] Subscription cancelada: {}", subscriptionId);
-        } catch (Exception e) {
-            log.error("[Stripe] Erro ao cancelar subscription: {}", e.getMessage());
-            // Não propaga — o cancelamento local já foi feito no SubscriptionService
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException.NotFound alreadyAbsent) {
+            // Idempotent deletion: an already absent provider subscription is canceled for our purposes.
         }
     }
-
-    // ── Helpers ────────────────────────────────────────────────────────────
 
     private String buildFormBody(Map<String, Object> params) {
         StringBuilder sb = new StringBuilder();
         params.forEach((key, value) -> {
             if (sb.length() > 0) sb.append("&");
-            sb.append(URLEncoder.encode(key,   StandardCharsets.UTF_8))
+            sb.append(URLEncoder.encode(key, StandardCharsets.UTF_8))
               .append("=")
               .append(URLEncoder.encode(value.toString(), StandardCharsets.UTF_8));
         });
         return sb.toString();
     }
 
-    /**
-     * Extrai um valor string de um JSON usando busca simples por chave.
-     * Suficiente para os campos que precisamos (id, url) sem depender de Jackson.
-     * Nota: não trata arrays nem objetos aninhados — apenas strings de primeiro nível.
-     */
     private String extractJsonValue(String json, String key) {
+        if (json == null) return null;
         int idx = json.indexOf(key);
         if (idx < 0) return null;
-        int colonIdx   = json.indexOf(":", idx + key.length());
+        int colonIdx = json.indexOf(":", idx + key.length());
         if (colonIdx < 0) return null;
-        // Pula espaços entre ":" e o valor
         int quoteStart = json.indexOf("\"", colonIdx + 1);
         if (quoteStart < 0) return null;
-        int quoteEnd   = json.indexOf("\"", quoteStart + 1);
+        int quoteEnd = json.indexOf("\"", quoteStart + 1);
         if (quoteEnd < 0) return null;
         return json.substring(quoteStart + 1, quoteEnd);
     }

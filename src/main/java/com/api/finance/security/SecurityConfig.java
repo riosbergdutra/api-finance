@@ -1,31 +1,32 @@
 package com.api.finance.security;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
-/**
- * Configuração de segurança do FinanceFlow.
- *
- * MODELO BFF STATELESS:
- * - Nenhuma sessão HTTP criada (STATELESS)
- * - Bearer JWT validado em todo request de negócio
- * - Refresh token fica em Redis (AuthSession), nunca exposto
- * - CSRF desabilitado: API stateless com JWT não precisa (sem cookies de autenticação)
- *
- * FAIL-SAFE: anyRequest().denyAll() — qualquer rota não mapeada é bloqueada.
- * Nunca use permitAll() como regra final.
- */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -34,52 +35,57 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
 
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}")
+    private String jwkSetUri;
+
+    @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
+    private String clientId;
+
+    @Value("${app.security.jwt.required-audience:}")
+    private String requiredAudience;
+
+    @Value("${app.cookies.secure:true}")
+    private boolean secureCookies;
+
+    @Value("${app.cookies.same-site:Lax}")
+    private String cookieSameSite;
+
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            BffSessionAuthenticationFilter sessionAuthenticationFilter) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        // Monitoramento — só health e info expostos
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/info").permitAll()
-                        // Documentação da API
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info",
+                                "/actuator/prometheus").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // BFF auth — sem JWT (recebe authorization code do Keycloak)
-                        .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout", "/auth/callback").permitAll()
-                        // Logout do BFF é autenticado pelo cookie/JWT do próprio usuário
+                        .requestMatchers(HttpMethod.GET, "/auth/login", "/auth/callback", "/auth/csrf").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/auth/me").authenticated()
-                        // WebSocket — autenticado via query param token (não Bearer header)
+                        .requestMatchers(HttpMethod.GET, "/auth/session").authenticated()
                         .requestMatchers("/ws/**").permitAll()
-                        // Módulos de negócio — JWT obrigatório
-                        // OBS: UserController expõe seus endpoints sob "/api/users/**" (prefixo "/api"
-                        // diferente dos demais controllers). Os dois matchers abaixo cobrem tanto o
-                        // path real do controller quanto o padrão "/users/**" usado pelos demais módulos.
-                        .requestMatchers("/api/users/**").authenticated()
-                        .requestMatchers("/users/**").authenticated()
-                        .requestMatchers("/accounts/**").authenticated()
-                        .requestMatchers("/transactions/**").authenticated()
-                        .requestMatchers("/categories/**").authenticated()
-                        .requestMatchers("/budgets/**").authenticated()
-                        .requestMatchers("/goals/**").authenticated()
-                        .requestMatchers("/notifications/**").authenticated()
-                        .requestMatchers("/dashboard/**").authenticated()
-                        .requestMatchers("/subscriptions/**").authenticated()
+                        .requestMatchers("/api/users/**", "/users/**", "/accounts/**", "/transactions/**",
+                                "/categories/**", "/budgets/**", "/goals/**", "/notifications/**",
+                                "/dashboard/**", "/subscriptions/**", "/export/**", "/open-finance/**")
+                        .authenticated()
                         .requestMatchers(HttpMethod.POST, "/webhooks/mercadopago", "/webhooks/stripe").permitAll()
-                        .requestMatchers("/export/**").authenticated()
-                        .requestMatchers("/open-finance/**").authenticated()
-                        // FAIL-SAFE: bloqueia qualquer rota não mapeada explicitamente
                         .anyRequest().denyAll()
                 )
-                // API stateless com JWT — CSRF não aplicável
-                .csrf(csrf -> csrf.disable())
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                )
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfTokenRepository())
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        // Stripe autentica webhooks pela assinatura criptográfica do payload.
+                        .ignoringRequestMatchers("/webhooks/stripe")
+                )
                 .cors(Customizer.withDefaults())
                 .logout(logout -> logout.disable())
-                // Valida Bearer JWT em todo request de negócio
-                .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
-                // Sem sessão HTTP
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                // Security headers
+                .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
@@ -99,7 +105,50 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieCustomizer(cookie -> cookie
+                .path("/")
+                .secure(secureCookies)
+                .sameSite(cookieSameSite));
+        return repository;
+    }
+
+    @Bean
+    public FilterRegistrationBean<BffSessionAuthenticationFilter> disableContainerRegistration(
+            BffSessionAuthenticationFilter filter) {
+        FilterRegistrationBean<BffSessionAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    static OAuth2TokenValidator<Jwt> audienceValidator(String expectedAudience) {
+        return jwt -> jwt.getAudience().contains(expectedAudience)
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                        "invalid_token", "Required API audience is missing.", null));
+    }
+
+    @Bean
     public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withIssuerLocation(issuerUri).build();
+        NimbusJwtDecoder decoder = (jwkSetUri == null || jwkSetUri.isBlank())
+                ? NimbusJwtDecoder.withIssuerLocation(issuerUri).build()
+                : NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        OAuth2TokenValidator<Jwt> issuerAndTimeValidator = JwtValidators.createDefaultWithIssuer(issuerUri);
+        OAuth2TokenValidator<Jwt> authorizedPartyValidator = new JwtClaimValidator<>("azp", clientId::equals);
+        if (requiredAudience != null && !requiredAudience.isBlank()) {
+            OAuth2TokenValidator<Jwt> audienceValidator = audienceValidator(requiredAudience);
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    issuerAndTimeValidator,
+                    authorizedPartyValidator,
+                    audienceValidator
+            ));
+        } else {
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    issuerAndTimeValidator,
+                    authorizedPartyValidator
+            ));
+        }
+        return decoder;
     }
 }

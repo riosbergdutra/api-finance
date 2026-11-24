@@ -11,12 +11,16 @@ import com.api.finance.transaction.dto.CreateTransactionRequest;
 import com.api.finance.transaction.dto.TransactionResponse;
 import com.api.finance.transaction.dto.UpdateTransactionRequest;
 import com.api.finance.transaction.exception.TransactionNotFoundException;
+import com.api.finance.transaction.exception.DuplicateTransactionException;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.model.TransactionStatus;
 import com.api.finance.transaction.model.TransactionType;
 import com.api.finance.transaction.repository.TransactionRepository;
 import com.api.finance.transaction.service.TransactionService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.subscription.service.SubscriptionService;
+import com.api.finance.budget.service.BudgetService;
+import org.springframework.context.ApplicationEventPublisher;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -44,11 +48,16 @@ import static org.mockito.BDDMockito.*;
 @DisplayName("TransactionService")
 class TransactionServiceTest {
 
+    private static final UUID DESTINATION_ACCOUNT_ID = UUID.fromString("00000000-0000-0000-0000-000000000011");
+
     @Mock TransactionRepository transactionRepository;
     @Mock AccountRepository accountRepository;
     @Mock CategoryRepository categoryRepository;
     @Mock CategoryService categoryService;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
+    @Mock SubscriptionService subscriptionService;
+    @Mock BudgetService budgetService;
+    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks TransactionService transactionService;
 
     AuthenticatedUser caller;
@@ -60,7 +69,15 @@ class TransactionServiceTest {
         caller = caller();
         account = account();
         transaction = transaction();
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+    }
+
+    private Account destinationAccount() {
+        Account destination = account();
+        destination.setId(DESTINATION_ACCOUNT_ID);
+        destination.setName("Conta destino");
+        destination.setBalance(new BigDecimal("200.00"));
+        return destination;
     }
 
     // ─── listar ──────────────────────────────────────────────────────
@@ -102,10 +119,11 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(100), "Mercado", "Supermercado X", LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(), anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             TransactionResponse result = transactionService.criar(req, caller);
 
@@ -122,10 +140,12 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.RECEITA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(500), "Salário", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -141,10 +161,12 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.PENDENTE,
                     BigDecimal.valueOf(200), "Fatura", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -153,17 +175,17 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("lança IllegalStateException quando transação duplicada")
+        @DisplayName("lança DuplicateTransactionException quando transação duplicada")
         void lancaExcecaoTransacaoDuplicada() {
             CreateTransactionRequest req = new CreateTransactionRequest(
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "Mercado", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(true);
 
             assertThatThrownBy(() -> transactionService.criar(req, caller))
-                    .isInstanceOf(IllegalStateException.class)
+                    .isInstanceOf(DuplicateTransactionException.class)
                     .hasMessageContaining("duplicada");
         }
 
@@ -174,10 +196,72 @@ class TransactionServiceTest {
                     UUID.randomUUID(), null, null, TransactionType.DESPESA, null,
                     BigDecimal.valueOf(100), "X", null, LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(accountRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> transactionService.criar(req, caller))
                     .isInstanceOf(AccountNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("transferência confirmada debita origem e credita destino")
+        void transferenciaDebitaOrigemECreditaDestino() {
+            Account destination = destinationAccount();
+            CreateTransactionRequest req = new CreateTransactionRequest(
+                    ACCOUNT_ID, DESTINATION_ACCOUNT_ID, null, TransactionType.TRANSFERENCIA,
+                    TransactionStatus.CONFIRMADA, new BigDecimal("100.00"),
+                    "Transferência", null, LocalDate.now());
+
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+            given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
+            given(categoryService.categorizar(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean()))
+                    .willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID)))
+                    .willReturn(Optional.of(transaction));
+
+            transactionService.criar(req, caller);
+
+            assertThat(account.getBalance()).isEqualByComparingTo("900.00");
+            assertThat(destination.getBalance()).isEqualByComparingTo("300.00");
+            then(accountRepository).should().save(account);
+            then(accountRepository).should().save(destination);
+        }
+
+        @Test
+        @DisplayName("rejeita transferência entre moedas diferentes")
+        void rejeitaTransferenciaEntreMoedasDiferentes() {
+            Account destination = destinationAccount();
+            destination.setCurrency("USD");
+            CreateTransactionRequest req = new CreateTransactionRequest(
+                    ACCOUNT_ID, DESTINATION_ACCOUNT_ID, null, TransactionType.TRANSFERENCIA,
+                    TransactionStatus.CONFIRMADA, new BigDecimal("100.00"),
+                    "Transferência", null, LocalDate.now());
+
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+
+            assertThatThrownBy(() -> transactionService.criar(req, caller))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("mesma moeda");
+        }
+
+        @Test
+        @DisplayName("rejeita transferência sem conta de destino")
+        void rejeitaTransferenciaSemDestino() {
+            CreateTransactionRequest req = new CreateTransactionRequest(
+                    ACCOUNT_ID, null, null, TransactionType.TRANSFERENCIA,
+                    TransactionStatus.CONFIRMADA, new BigDecimal("100.00"),
+                    "Transferência", null, LocalDate.now());
+
+            assertThatThrownBy(() -> transactionService.criar(req, caller))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("destino");
         }
 
         @Test
@@ -188,10 +272,12 @@ class TransactionServiceTest {
                     ACCOUNT_ID, null, null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(50), "Padaria", "Padaria Estrela", LocalDate.now());
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(transactionRepository.existsByHashDeduplicacao(any())).willReturn(false);
             given(categoryService.categorizar("Padaria Estrela", USER_ID)).willReturn(Optional.of(cat));
-            given(transactionRepository.save(any())).willReturn(transaction);
+            given(transactionRepository.insertIfFingerprintAbsent(any(), any(), any(), any(), any(),
+                    anyString(), anyString(), any(), any(), any(), any(), anyString(), anyBoolean())).willReturn(1);
+            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.of(transaction));
 
             transactionService.criar(req, caller);
 
@@ -205,6 +291,37 @@ class TransactionServiceTest {
     class Atualizar {
 
         @Test
+        @DisplayName("atualizar transferência reverte e reaplica os dois saldos")
+        void atualizarTransferenciaAtualizaOrigemEDestino() {
+            Account source = account();
+            source.setBalance(new BigDecimal("900.00"));
+            Account destination = destinationAccount();
+            destination.setBalance(new BigDecimal("300.00"));
+            transaction.setTipo(TransactionType.TRANSFERENCIA);
+            transaction.setContaDestinoId(DESTINATION_ACCOUNT_ID);
+            transaction.setTransferDestinationApplied(true);
+
+            UpdateTransactionRequest req = new UpdateTransactionRequest(
+                    null, TransactionType.TRANSFERENCIA, TransactionStatus.CONFIRMADA,
+                    new BigDecimal("200.00"), "Transferência ajustada", null, LocalDate.now());
+
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID))
+                    .willReturn(Optional.of(transaction));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(source));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+            given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
+            given(transactionRepository.save(any())).willReturn(transaction);
+
+            transactionService.atualizar(TRANSACTION_ID, req, caller);
+
+            assertThat(source.getBalance()).isEqualByComparingTo("800.00");
+            assertThat(destination.getBalance()).isEqualByComparingTo("400.00");
+            assertThat(transaction.isTransferDestinationApplied()).isTrue();
+        }
+
+        @Test
         @DisplayName("reverte saldo antigo e aplica novo quando ambas confirmadas")
         void reverteEAplicaNovaSaldo() {
             // Transação original: DESPESA 100 CONFIRMADA → conta 1000
@@ -212,8 +329,8 @@ class TransactionServiceTest {
                     null, TransactionType.DESPESA, TransactionStatus.CONFIRMADA,
                     BigDecimal.valueOf(200), "Ajuste", null, LocalDate.now());
 
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account)).willReturn(Optional.of(account));
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(categoryService.categorizar(any(), any())).willReturn(Optional.empty());
             given(transactionRepository.save(any())).willReturn(transaction);
 
@@ -230,10 +347,35 @@ class TransactionServiceTest {
     class Deletar {
 
         @Test
+        @DisplayName("deletar transferência reverte origem e destino")
+        void deletaTransferenciaReverteOrigemEDestino() {
+            Account source = account();
+            source.setBalance(new BigDecimal("900.00"));
+            Account destination = destinationAccount();
+            destination.setBalance(new BigDecimal("300.00"));
+            transaction.setTipo(TransactionType.TRANSFERENCIA);
+            transaction.setContaDestinoId(DESTINATION_ACCOUNT_ID);
+            transaction.setTransferDestinationApplied(true);
+
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID))
+                    .willReturn(Optional.of(transaction));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(source));
+            given(accountRepository.findByIdAndUserIdForUpdate(DESTINATION_ACCOUNT_ID, USER_ID))
+                    .willReturn(Optional.of(destination));
+
+            transactionService.deletar(TRANSACTION_ID, caller);
+
+            assertThat(source.getBalance()).isEqualByComparingTo("1000.00");
+            assertThat(destination.getBalance()).isEqualByComparingTo("200.00");
+            then(transactionRepository).should().delete(transaction);
+        }
+
+        @Test
         @DisplayName("deleta transação e reverte saldo da conta")
         void deletaEReverteSaldo() {
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
 
             transactionService.deletar(TRANSACTION_ID, caller);
 
@@ -245,7 +387,7 @@ class TransactionServiceTest {
         @Test
         @DisplayName("lança TransactionNotFoundException quando não encontrada")
         void lancaNotFound() {
-            given(transactionRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(transactionRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> transactionService.deletar(UUID.randomUUID(), caller))
                     .isInstanceOf(TransactionNotFoundException.class);
@@ -255,11 +397,11 @@ class TransactionServiceTest {
         @DisplayName("não tenta reverter saldo quando transação é PENDENTE")
         void naoReverteSaldoPendente() {
             transaction.setStatus(TransactionStatus.PENDENTE);
-            given(transactionRepository.findByIdAndUserId(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
+            given(transactionRepository.findByIdAndUserIdForUpdate(TRANSACTION_ID, USER_ID)).willReturn(Optional.of(transaction));
 
             transactionService.deletar(TRANSACTION_ID, caller);
 
-            then(accountRepository).should(never()).findByIdAndUserId(any(), any());
+            then(accountRepository).should(never()).findByIdAndUserIdForUpdate(any(), any());
         }
     }
 }

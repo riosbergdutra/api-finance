@@ -10,7 +10,7 @@ import com.api.finance.account.repository.AccountRepository;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +26,7 @@ import java.util.UUID;
 public class AccountService {
 
     private final AccountRepository       accountRepository;
-    private final UserRepository          userRepository;
+    private final UserDirectoryPort       userDirectory;
     private final SubscriptionService     subscriptionService;
 
     // ── READ ──────────────────────────────────────────────────────────────
@@ -54,6 +54,9 @@ public class AccountService {
     @Transactional
     public AccountResponse create(CreateAccountRequest request, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
+
+        // Serializa a verificação para impedir que requisições simultâneas excedam a cota.
+        subscriptionService.lockSubscriptionForQuotaCheck(userId);
 
         // Verifica limite do plano (FREE = 3 contas, PRO = ilimitado)
         long total = accountRepository.countByUserIdAndActiveTrue(userId);
@@ -91,7 +94,8 @@ public class AccountService {
     public AccountResponse update(UUID accountId, UpdateAccountRequest request, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Account account = accountRepository.findByIdAndUserId(accountId, userId)
+        // Evita sobrescrever saldo atualizado concorrentemente por lançamentos financeiros.
+        Account account = accountRepository.findByIdAndUserIdForUpdate(accountId, userId)
                 .orElseThrow(() -> new AccountNotFoundException(
                         "Conta não encontrada: " + accountId));
 
@@ -122,7 +126,7 @@ public class AccountService {
     // ── HELPERS ───────────────────────────────────────────────────────────
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }

@@ -7,28 +7,26 @@ import com.api.finance.goal.repository.GoalRepository;
 import com.api.finance.notification.repository.NotificationRepository;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Serviço do Dashboard.
  *
- * As 4 queries são executadas em PARALELO via CompletableFuture.
- * Com Virtual Threads (habilitadas em FinanceApplication via TomcatProtocolHandlerCustomizer),
- * cada query roda em sua própria thread virtual — sem bloquear thread de plataforma.
- *
- * Sequencial: ~200ms + ~150ms + ~150ms + ~100ms = ~600ms
- * Em paralelo: max(~200ms, ~150ms, ~150ms, ~100ms) = ~200ms
+ * As consultas são disparadas em paralelo via CompletableFuture.supplyAsync().
+ * Sem executor explícito, elas usam o ForkJoinPool.commonPool — não o executor
+ * de virtual threads configurado no Tomcat. O ganho de latência depende da carga
+ * e da capacidade do pool de conexões do banco; não há benchmark assumido aqui.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class DashboardService {
 
@@ -36,35 +34,50 @@ public class DashboardService {
     private final TransactionRepository transactionRepository;
     private final NotificationRepository notificationRepository;
     private final GoalRepository goalRepository;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
+    private final Executor dashboardExecutor;
+
+    public DashboardService(AccountRepository accountRepository,
+                            TransactionRepository transactionRepository,
+                            NotificationRepository notificationRepository,
+                            GoalRepository goalRepository,
+                            UserDirectoryPort userDirectory,
+                            @Qualifier("dashboardExecutor") Executor dashboardExecutor) {
+        this.accountRepository = accountRepository;
+        this.transactionRepository = transactionRepository;
+        this.notificationRepository = notificationRepository;
+        this.goalRepository = goalRepository;
+        this.userDirectory = userDirectory;
+        this.dashboardExecutor = dashboardExecutor;
+    }
 
     public DashboardResponse getDashboard(AuthenticatedUser caller) {
-        UUID userId = userRepository.findIdByKeycloakId(caller.id())
+        UUID userId = userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
 
         // Primeiro e último dia do mês atual — compatível com PostgreSQL
         LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
         LocalDate fimMes = inicioMes.withDayOfMonth(inicioMes.lengthOfMonth());
 
-        // ── 4 queries em paralelo via CompletableFuture ──────────────────
+        // ── Consultas em paralelo; contagens executadas no banco ───────────
         CompletableFuture<BigDecimal> saldoFuture =
                 CompletableFuture.supplyAsync(() ->
-                        accountRepository.sumBalanceByUserId(userId));
+                        accountRepository.sumBalanceByUserId(userId), dashboardExecutor);
 
         CompletableFuture<BigDecimal> receitasFuture =
                 CompletableFuture.supplyAsync(() ->
-                        transactionRepository.sumReceitasMes(userId, inicioMes, fimMes));
+                        transactionRepository.sumReceitasMes(userId, inicioMes, fimMes), dashboardExecutor);
 
         CompletableFuture<BigDecimal> despesasFuture =
                 CompletableFuture.supplyAsync(() ->
-                        transactionRepository.sumDespesasMes(userId, inicioMes, fimMes));
+                        transactionRepository.sumDespesasMes(userId, inicioMes, fimMes), dashboardExecutor);
 
         CompletableFuture<long[]> contadoresFuture =
                 CompletableFuture.supplyAsync(() -> new long[]{
                         notificationRepository.countByUserIdAndLidaFalse(userId),
                         accountRepository.countByUserIdAndActiveTrue(userId),
-                        goalRepository.findByUserIdAndConcluidaFalse(userId).size()
-                });
+                        goalRepository.countByUserIdAndConcluidaFalse(userId)
+                }, dashboardExecutor);
 
         CompletableFuture.allOf(saldoFuture, receitasFuture, despesasFuture, contadoresFuture).join();
 

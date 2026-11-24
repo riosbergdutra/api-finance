@@ -1,11 +1,12 @@
 package com.api.finance.export.service;
 
 import com.api.finance.config.AuthenticatedUser;
+import com.api.finance.export.exception.ExportLimitExceededException;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.service.SubscriptionService;
 import com.api.finance.transaction.model.Transaction;
 import com.api.finance.transaction.repository.TransactionRepository;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -23,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +43,10 @@ public class ExportService {
 
     private final TransactionRepository transactionRepository;
     private final SubscriptionService subscriptionService;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
+
+    @Value("${app.export.max-records:10000}")
+    private int maxExportRecords = 10000;
 
     private static final DateTimeFormatter BR_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -48,6 +54,7 @@ public class ExportService {
 
     @Transactional(readOnly = true)
     public byte[] gerarExcel(LocalDate de, LocalDate ate, AuthenticatedUser caller) {
+        validarPeriodo(de, ate);
         UUID userId = resolveUserId(caller);
         subscriptionService.assertIsPro(userId, "Exportação Excel");
 
@@ -104,6 +111,7 @@ public class ExportService {
 
     @Transactional(readOnly = true)
     public byte[] gerarPdf(LocalDate de, LocalDate ate, AuthenticatedUser caller) {
+        validarPeriodo(de, ate);
         UUID userId = resolveUserId(caller);
         subscriptionService.assertIsPro(userId, "Exportação PDF");
 
@@ -186,8 +194,25 @@ public class ExportService {
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private List<Transaction> buscarTransacoes(UUID userId, LocalDate de, LocalDate ate) {
-        return transactionRepository.findByUserIdAndPeriodo(
-                userId, de, ate, PageRequest.of(0, Integer.MAX_VALUE)).getContent();
+        if (maxExportRecords < 1 || maxExportRecords == Integer.MAX_VALUE) {
+            throw new IllegalStateException("app.export.max-records deve estar entre 1 e 2147483646.");
+        }
+
+        Page<Transaction> page = transactionRepository.findByUserIdAndPeriodo(
+                userId, de, ate, PageRequest.of(0, maxExportRecords + 1));
+
+        if (page.getTotalElements() > maxExportRecords) {
+            throw new ExportLimitExceededException(
+                    "A exportação excede o limite de " + maxExportRecords +
+                            " transações. Reduza o período e tente novamente.");
+        }
+        return page.getContent();
+    }
+
+    private void validarPeriodo(LocalDate de, LocalDate ate) {
+        if (de == null || ate == null || de.isAfter(ate)) {
+            throw new IllegalArgumentException("Informe um período válido: a data inicial deve ser anterior ou igual à final.");
+        }
     }
 
     private BigDecimal somarPorTipo(List<Transaction> transacoes, com.api.finance.transaction.model.TransactionType tipo) {
@@ -234,18 +259,9 @@ public class ExportService {
         return style;
     }
 
-    /**
-     * FIX: retorna caller.id() diretamente (keycloakId vindo do jwt.getSubject()).
-     *
-     * A tabela subscription usa o keycloakId como user_id — o mesmo padrão de
-     * AccountService, TransactionService e todos os outros services do projeto.
-     *
-     * O código anterior fazia findIdByKeycloakId(caller.id()), que retornava o
-     * UUID interno da tabela users — um valor diferente do que está salvo em
-     * subscription.user_id, fazendo o assertIsPro nunca encontrar a subscription
-     * correta e sempre criar uma FREE nova, bloqueando usuários PRO com 402.
-     */
+    /** Resolve a identidade externa para o UUID interno usado pela persistência. */
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return caller.id();
+        return userDirectory.findInternalUserId(caller.id())
+                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }

@@ -12,7 +12,8 @@ import com.api.finance.account.service.AccountService;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.TestFixtures;
 import com.api.finance.shared.exception.ResourceNotFoundException;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.subscription.service.SubscriptionService;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,7 +38,8 @@ import static org.mockito.BDDMockito.*;
 class AccountServiceTest {
 
     @Mock AccountRepository accountRepository;
-    @Mock UserRepository userRepository;
+    @Mock UserDirectoryPort userDirectory;
+    @Mock SubscriptionService subscriptionService;
     @InjectMocks AccountService accountService;
 
     AuthenticatedUser caller;
@@ -47,7 +49,7 @@ class AccountServiceTest {
     void setUp() {
         caller = caller();
         account = account();
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
     }
 
     // ─── listActiveAccounts ───────────────────────────────────────────
@@ -135,6 +137,8 @@ class AccountServiceTest {
                     "Extra", AccountType.CORRENTE, BigDecimal.ZERO, "BRL", null, null);
 
             given(accountRepository.countByUserIdAndActiveTrue(USER_ID)).willReturn(10L);
+            willThrow(new IllegalStateException("Limite de contas atingido"))
+                    .given(subscriptionService).assertPodeCriarConta(USER_ID, 10L);
 
             assertThatThrownBy(() -> accountService.create(req, caller))
                     .isInstanceOf(IllegalStateException.class)
@@ -182,7 +186,7 @@ class AccountServiceTest {
             UpdateAccountRequest req = new UpdateAccountRequest(
                     "Conta Atualizada", AccountType.POUPANCA, null, null);
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(accountRepository.existsByUserIdAndNameIgnoreCaseAndIdNot(USER_ID, "Conta Atualizada", ACCOUNT_ID)).willReturn(false);
             given(accountRepository.save(any())).willReturn(account);
 
@@ -195,7 +199,7 @@ class AccountServiceTest {
         @DisplayName("lança AccountNotFoundException quando conta não pertence ao usuário")
         void lancaNotFoundQuandoContaDeOutroUsuario() {
             UpdateAccountRequest req = new UpdateAccountRequest("X", AccountType.CORRENTE, null, null);
-            given(accountRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(accountRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> accountService.update(UUID.randomUUID(), req, caller))
                     .isInstanceOf(AccountNotFoundException.class);
@@ -231,7 +235,7 @@ class AccountServiceTest {
     @Test
     @DisplayName("lança ResourceNotFoundException quando usuário não encontrado no banco")
     void lancaNotFoundQuandoUsuarioInexistente() {
-        given(userRepository.findIdByKeycloakId(KEYCLOAK_ID)).willReturn(Optional.empty());
+        given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> accountService.listActiveAccounts(caller))
                 .isInstanceOf(ResourceNotFoundException.class);

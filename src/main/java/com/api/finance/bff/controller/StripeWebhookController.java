@@ -9,32 +9,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * Recebe notificações do Stripe (webhooks).
- *
- * FLUXO:
- * 1. Usuário assina o plano PRO no frontend (via Stripe Checkout)
- * 2. Stripe chama este endpoint com o evento de pagamento/assinatura
- * 3. Validamos a assinatura HMAC-SHA256 (signature header) para garantir autenticidade
- * 4. Delegamos ao StripeWebhookService conforme o tipo de evento
- *
- * SEGURANÇA:
- * - Validação obrigatória de assinatura HMAC-SHA256 (rejeita qualquer request sem assinatura válida)
- * - Endpoint público (sem JWT) — autenticação é feita pela assinatura Stripe
- * - Sempre responde 200 rapidamente; processamento pesado vai para @Async
- *
- * CONFIGURAÇÃO NECESSÁRIA (application.yaml):
- *   stripe:
- *     api-key: <sua-secret-key-stripe>
- *     webhook-secret: <seu-webhook-endpoint-secret>
- *
- * COMO OBTER AS CHAVES:
- * 1. Acesse: https://dashboard.stripe.com/apikeys
- * 2. Copie a "Secret Key" (com prefixo sk_test_ ou sk_live_)
- * 3. Configure um webhook em: https://dashboard.stripe.com/webhooks
- * 4. Selecione os eventos: payment_intent.succeeded, customer.subscription.updated, customer.subscription.deleted
- * 5. Copie o "Signing Secret" (com prefixo whsec_)
- */
 @RestController
 @RequestMapping("/webhooks/stripe")
 @RequiredArgsConstructor
@@ -46,36 +20,27 @@ public class StripeWebhookController {
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
 
-    /**
-     * Endpoint principal de recebimento de webhooks.
-     *
-     * O Stripe envia o payload como string no corpo da requisição
-     * e um header Stripe-Signature no formato:
-     *   t=<timestamp>,v1=<hmac-sha256-hex>
-     *
-     * O webhook service valida usando a biblioteca Stripe oficialmente.
-     */
     @PostMapping
     public ResponseEntity<String> handleWebhook(
             @RequestHeader(value = "stripe-signature", required = false) String sigHeader,
             @RequestBody String payload) {
 
-        log.info("[Stripe Webhook] Recebido payload de {} bytes", payload.length());
-
-        // Valida e desserializa o payload
-        Event event = null;
+        Event event;
         try {
             event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
         } catch (Exception e) {
-            log.warn("[Stripe Webhook] Assinatura inválida ou erro ao desserializar: {}", e.getMessage());
-            return ResponseEntity.badRequest().body("{\"error\": \"Invalid signature\"}");
+            log.warn("[Stripe] Webhook rejeitado: assinatura inválida ou payload malformado.");
+            return ResponseEntity.badRequest().body("{\"error\":\"invalid_signature\"}");
         }
 
-        log.info("[Stripe Webhook] Evento validado: type={} id={}", event.getType(), event.getId());
+        // Bloqueio adicional: esta instalação aceita exclusivamente eventos de teste.
+        if (Boolean.TRUE.equals(event.getLivemode())) {
+            log.error("[Stripe] Evento live rejeitado. eventId={} type={}", event.getId(), event.getType());
+            return ResponseEntity.badRequest().body("{\"error\":\"live_events_disabled\"}");
+        }
 
-        // Processa o evento de forma assíncrona
+        log.info("[Stripe DEMO] Evento de teste validado: type={} id={}", event.getType(), event.getId());
         webhookService.processar(event);
-
-        return ResponseEntity.ok("{\"status\": \"received\"}");
+        return ResponseEntity.ok("{\"status\":\"received\",\"mode\":\"test\"}");
     }
 }

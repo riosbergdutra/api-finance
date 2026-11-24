@@ -2,17 +2,15 @@ package com.api.finance.subscription.service;
 
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.events.FinanceEvents;
-import com.api.finance.notification.model.NotificationType;
-import com.api.finance.notification.service.NotificationService;
 import com.api.finance.shared.exception.ResourceNotFoundException;
 import com.api.finance.subscription.dto.SubscriptionResponse;
+import com.api.finance.subscription.application.port.in.SubscriptionAccountDeletionPort;
 import com.api.finance.subscription.exception.PlanLimitExceededException;
 import com.api.finance.subscription.model.PlanType;
 import com.api.finance.subscription.model.Subscription;
 import com.api.finance.subscription.model.SubscriptionStatus;
 import com.api.finance.subscription.repository.SubscriptionRepository;
-import com.api.finance.user.model.User;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -21,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.Optional;
 
 /**
  * Gerencia os planos de assinatura e verifica limites em tempo real.
@@ -43,20 +42,19 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class SubscriptionService {
+public class SubscriptionService implements SubscriptionAccountDeletionPort {
 
     private static final int FREE_LIMITE_CONTAS = 3;
     private static final int FREE_LIMITE_TRANSACOES_MES = 100;
 
     private final SubscriptionRepository subscriptionRepository;
-    private final UserRepository userRepository;
-    private final NotificationService notificationService;
+    private final UserDirectoryPort userDirectory;
     private final StripeService stripeService;
     private final ApplicationEventPublisher eventPublisher;  // FIX: publica eventos de domínio, seguindo o mesmo padrão usado em TransactionService/GoalService
 
     // ── Consulta ─────────────────────────────────────────────────────────
 
-    @Transactional(readOnly = true)
+    @Transactional
     public SubscriptionResponse getMeuPlano(AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
         Subscription sub = getOrCreateFree(userId);
@@ -66,13 +64,26 @@ public class SubscriptionService {
     // ── Verificação de limites ────────────────────────────────────────────
 
     /**
+     * Serializa operações que consomem cotas FREE do mesmo usuário.
+     * Deve ser chamado antes de contar recursos e mantido até o commit da criação.
+     */
+    @Transactional
+    public void lockSubscriptionForQuotaCheck(UUID userId) {
+        subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), userId);
+        subscriptionRepository.findByUserIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Não foi possível bloquear a assinatura para verificar limites."));
+    }
+
+
+    /**
      * Verifica se o usuário pode criar mais uma conta.
      * Lança PlanLimitExceededException (402) se FREE e já tem 3 contas.
      * Chamado pelo AccountService antes de criar.
      */
     @Transactional(readOnly = true)
     public void assertPodeCriarConta(UUID userId, long contasAtuais) {
-        if (contasAtuais >= FREE_LIMITE_CONTAS && !getOrCreateFree(userId).isPro()) {
+        if (contasAtuais >= FREE_LIMITE_CONTAS && !isPro(userId)) {
             throw new PlanLimitExceededException(
                     "Plano gratuito permite no máximo " + FREE_LIMITE_CONTAS +
                             " contas. Faça upgrade para o plano PRO.");
@@ -85,7 +96,7 @@ public class SubscriptionService {
      */
     @Transactional(readOnly = true)
     public void assertPodeCriarTransacao(UUID userId, long transacoesNoMes) {
-        if (transacoesNoMes >= FREE_LIMITE_TRANSACOES_MES && !getOrCreateFree(userId).isPro()) {
+        if (transacoesNoMes >= FREE_LIMITE_TRANSACOES_MES && !isPro(userId)) {
             throw new PlanLimitExceededException(
                     "Plano gratuito permite no máximo " + FREE_LIMITE_TRANSACOES_MES +
                             " transações por mês. Faça upgrade para o plano PRO.");
@@ -98,7 +109,7 @@ public class SubscriptionService {
      */
     @Transactional(readOnly = true)
     public void assertIsPro(UUID userId, String funcionalidade) {
-        if (!getOrCreateFree(userId).isPro()) {
+        if (!isPro(userId)) {
             throw new PlanLimitExceededException(
                     funcionalidade + " é exclusivo do plano PRO.");
         }
@@ -142,6 +153,25 @@ public class SubscriptionService {
     }
 
     /**
+     * Cancels recurring billing before a user's local data and identity are erased.
+     * Failure is propagated so account deletion does not silently leave paid billing active.
+     */
+    @Override
+    @Transactional
+    public void cancelarParaExclusao(UUID userId) {
+        subscriptionRepository.findByUserIdForUpdate(userId).ifPresent(sub -> {
+            String stripeSubscriptionId = sub.getStripeSubscriptionId();
+            if (stripeSubscriptionId != null && !stripeSubscriptionId.isBlank()) {
+                // Reconcile against Stripe even if the local status is stale.
+                stripeService.cancelarSubscription(stripeSubscriptionId);
+            }
+            sub.setPlano(PlanType.FREE);
+            sub.setStatus(SubscriptionStatus.CANCELLED);
+            subscriptionRepository.save(sub);
+        });
+    }
+
+    /**
      * Cancela a subscription do usuário (revoga PRO).
      * Se houver uma subscription recorrente no Stripe, cancela lá também.
      */
@@ -168,13 +198,132 @@ public class SubscriptionService {
         // separados, e o keycloakId real é resolvido (antes era passado null, então
         // a notificação nunca chegava via WebSocket, só ficava persistida).
         String keycloakId = resolveKeycloakId(userId);
-        notificationService.criarNotificacao(
-                keycloakId,
-                userId,
-                NotificationType.SUBSCRIPTION_CANCELED,
-                "Assinatura PRO cancelada",
-                "Sua assinatura PRO foi cancelada. Você voltou ao plano FREE."
-        );
+        eventPublisher.publishEvent(new FinanceEvents.AssinaturaCanceladaEvent(keycloakId, userId));
+    }
+
+    /**
+     * Applies recurring Stripe subscription events in provider-created order.
+     * A row lock serializes concurrent webhook deliveries for the same subscription.
+     */
+    @Transactional
+    public boolean aplicarEventoStripeSubscription(
+            String stripeSubscriptionId,
+            UUID metadataUserId,
+            String stripeStatus,
+            LocalDate periodEnd,
+            long eventCreated,
+            String eventId) {
+        if (stripeSubscriptionId == null || stripeSubscriptionId.isBlank()
+                || stripeStatus == null || stripeStatus.isBlank()
+                || eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("Dados do evento Stripe incompletos.");
+        }
+
+        Optional<Subscription> existing = subscriptionRepository
+                .findByStripeSubscriptionIdForUpdate(stripeSubscriptionId);
+        Subscription sub;
+        if (existing.isPresent()) {
+            sub = existing.get();
+        } else {
+            if (metadataUserId == null) {
+                // An unknown provider subscription cannot be safely associated
+                // with a local user. Acknowledge it instead of retrying forever.
+                log.warn("[Stripe] Evento de subscription desconhecida sem metadata de usuário; nenhum entitlement alterado.");
+                return false;
+            }
+            if (userDirectory.findIdentityProviderId(metadataUserId).isEmpty()) {
+                log.warn("[Stripe] Subscription recebida para usuário local inexistente; nenhum registro órfão será criado.");
+                return false;
+            }
+            subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), metadataUserId);
+            sub = subscriptionRepository.findByUserIdForUpdate(metadataUserId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Não foi possível bloquear a assinatura local para aplicar o evento Stripe."));
+        }
+
+        if (metadataUserId != null && !metadataUserId.equals(sub.getUserId())) {
+            throw new IllegalStateException("Metadata do Stripe não corresponde ao proprietário da assinatura.");
+        }
+        if (sub.getStripeSubscriptionId() != null
+                && !stripeSubscriptionId.equals(sub.getStripeSubscriptionId())) {
+            throw new IllegalStateException("A assinatura local já está vinculada a outro ID Stripe.");
+        }
+
+        Long previousCreated = sub.getStripeLastEventCreated();
+        if (previousCreated != null && eventCreated < previousCreated) {
+            log.info("[Stripe] Evento antigo ignorado para subscription; eventId={} type/status={}",
+                    eventId, stripeStatus);
+            return false;
+        }
+        // Stripe timestamps have one-second precision. If two conflicting
+        // states share the same second, fail closed: an active event must not
+        // overwrite a non-active state because delivery order is ambiguous.
+        if (previousCreated != null && eventCreated == previousCreated
+                && sub.getStatus() != SubscriptionStatus.ACTIVE
+                && "active".equalsIgnoreCase(stripeStatus)) {
+            return false;
+        }
+
+        boolean wasPro = sub.isPro();
+        sub.setStripeSubscriptionId(stripeSubscriptionId);
+        sub.setStripeLastEventCreated(eventCreated);
+        sub.setStripeLastEventId(eventId);
+
+        if ("active".equalsIgnoreCase(stripeStatus)) {
+            if (periodEnd == null) {
+                throw new IllegalStateException(
+                        "Stripe não informou o fim do período da assinatura " + stripeSubscriptionId + ".");
+            }
+            sub.setPlano(PlanType.PRO);
+            sub.setStatus(SubscriptionStatus.ACTIVE);
+            sub.setInicioPeriodo(LocalDate.now());
+            sub.setFimPeriodo(periodEnd);
+        } else {
+            sub.setPlano(PlanType.FREE);
+            if ("canceled".equalsIgnoreCase(stripeStatus)) {
+                sub.setStatus(SubscriptionStatus.CANCELLED);
+            } else if ("incomplete_expired".equalsIgnoreCase(stripeStatus)) {
+                sub.setStatus(SubscriptionStatus.EXPIRED);
+            } else {
+                // past_due, unpaid, incomplete, paused and unknown states do
+                // not grant paid entitlements; Stripe can later send a newer active event.
+                sub.setStatus(SubscriptionStatus.PENDING_PAYMENT);
+            }
+        }
+
+        subscriptionRepository.save(sub);
+        if (wasPro && !sub.isPro()) {
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(
+                    new FinanceEvents.AssinaturaExpiradaEvent(keycloakId, sub.getUserId()));
+        } else if (!wasPro && sub.isPro()) {
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(
+                    new FinanceEvents.ProAtivadoEvent(keycloakId, sub.getUserId(), sub.getFimPeriodo()));
+        }
+        return true;
+    }
+
+    /** Aplica o evento de cancelamento à assinatura Stripe exata, sem afetar outras contas. */
+    @Transactional
+    public void expirarPorStripeSubscriptionId(String stripeSubscriptionId) {
+        if (stripeSubscriptionId == null || stripeSubscriptionId.isBlank()) {
+            throw new IllegalArgumentException("Stripe subscription ID é obrigatório.");
+        }
+
+        subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId).ifPresent(sub -> {
+            if (sub.getPlano() != PlanType.PRO || sub.getStatus() != SubscriptionStatus.ACTIVE) {
+                return;
+            }
+
+            sub.setStatus(SubscriptionStatus.EXPIRED);
+            sub.setPlano(PlanType.FREE);
+            subscriptionRepository.save(sub);
+
+            String keycloakId = resolveKeycloakId(sub.getUserId());
+            eventPublisher.publishEvent(new FinanceEvents.AssinaturaExpiradaEvent(keycloakId, sub.getUserId()));
+            log.info("[Subscription] Assinatura Stripe expirada pelo webhook: userId={}", sub.getUserId());
+        });
     }
 
     /**
@@ -206,22 +355,25 @@ public class SubscriptionService {
      * Todo usuário começa no FREE no momento do primeiro acesso a este método.
      */
     public Subscription getOrCreateFree(UUID userId) {
+        subscriptionRepository.insertFreeIfAbsent(UUID.randomUUID(), userId);
         return subscriptionRepository.findByUserId(userId)
-                .orElseGet(() -> {
-                    Subscription nova = Subscription.builder()
-                            .userId(userId)
-                            .plano(PlanType.FREE)
-                            .status(SubscriptionStatus.ACTIVE)
-                            .build();
-                    return subscriptionRepository.save(nova);
-                });
+                .orElseThrow(() -> new IllegalStateException(
+                        "Não foi possível criar ou recuperar a assinatura FREE do usuário."));
+    }
+
+    /** Consultas de autorização são somente leitura: ausência de registro significa FREE. */
+    private boolean isPro(UUID userId) {
+        return subscriptionRepository.findByUserId(userId)
+                .map(Subscription::isPro)
+                .orElse(false);
     }
 
     /**
      * Extrai o UUID do usuário a partir do AuthenticatedUser.
      */
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return caller.id();
+        return userDirectory.findInternalUserId(caller.id())
+                .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 
     /**
@@ -231,8 +383,7 @@ public class SubscriptionService {
      * acabava só persistida no banco, nunca chegando em tempo real ao usuário.
      */
     private String resolveKeycloakId(UUID userId) {
-        return userRepository.findById(userId)
-                .map(User::getKeycloakId)
+        return userDirectory.findIdentityProviderId(userId)
                 .map(Object::toString)
                 .orElse(null);
     }

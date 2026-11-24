@@ -5,11 +5,10 @@ import com.api.finance.notification.dto.NotificationResponse;
 import com.api.finance.notification.model.Notification;
 import com.api.finance.notification.model.NotificationType;
 import com.api.finance.notification.repository.NotificationRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
+import com.api.finance.notification.application.port.out.NotificationPushPort;
+import com.api.finance.notification.application.port.out.NotificationPushMessage;
 import com.api.finance.shared.exception.ResourceNotFoundException;
-import com.api.finance.user.repository.UserRepository;
-import com.api.finance.notification.websocket.NotificationWebSocketHandler;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -39,9 +38,8 @@ import java.util.UUID;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final UserRepository userRepository;
-    private final NotificationWebSocketHandler webSocketHandler;
-    private final ObjectMapper objectMapper;
+    private final UserDirectoryPort userDirectory;
+    private final NotificationPushPort notificationPushPort;
 
     // ── Leitura ─────────────────────────────────────────────────────────
 
@@ -100,7 +98,20 @@ public class NotificationService {
     public void criarNotificacao(String keycloakId, UUID userId, NotificationType tipo,
                                  String titulo, String mensagem,
                                  String entidadeTipo, UUID entidadeId) {
-        // 1. Persiste sempre — independente do canal de entrega
+        persistirNotificacao(keycloakId, userId, tipo, titulo, mensagem, entidadeTipo, entidadeId);
+    }
+
+    /** Atalho sem entidade relacionada; a chamada externa também passa pelo proxy @Async. */
+    @Async
+    @Transactional
+    public void criarNotificacao(String keycloakId, UUID userId,
+                                 NotificationType tipo, String titulo, String mensagem) {
+        persistirNotificacao(keycloakId, userId, tipo, titulo, mensagem, null, null);
+    }
+
+    private void persistirNotificacao(String keycloakId, UUID userId, NotificationType tipo,
+                                      String titulo, String mensagem,
+                                      String entidadeTipo, UUID entidadeId) {
         Notification notif = Notification.builder()
                 .userId(userId)
                 .tipo(tipo)
@@ -113,30 +124,15 @@ public class NotificationService {
         notificationRepository.save(notif);
         log.debug("[Notification] Persistida: tipo={} userId={}", tipo, userId);
 
-        // 2. Push em tempo real via WebSocket — best-effort
-        enviarViaPush(keycloakId, NotificationResponse.de(notif));
-    }
-
-    /** Atalho sem entidade relacionada */
-    @Async
-    public void criarNotificacao(String keycloakId, UUID userId,
-                                 NotificationType tipo, String titulo, String mensagem) {
-        criarNotificacao(keycloakId, userId, tipo, titulo, mensagem, null, null);
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────────────
-
-    private void enviarViaPush(String keycloakId, NotificationResponse notif) {
-        try {
-            String json = objectMapper.writeValueAsString(notif);
-            webSocketHandler.sendToUser(keycloakId, json);
-        } catch (JsonProcessingException e) {
-            log.warn("[Notification] Falha ao serializar para WebSocket: {}", e.getMessage());
-        }
+        // Entrega em tempo real é uma porta de saída e não controla a persistência.
+        notificationPushPort.publish(keycloakId, new NotificationPushMessage(
+                notif.getId(), notif.getTipo(), notif.getTitulo(), notif.getMensagem(),
+                notif.isLida(), notif.getEntidadeTipo(), notif.getEntidadeId(), notif.getCriadoEm()
+        ));
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }

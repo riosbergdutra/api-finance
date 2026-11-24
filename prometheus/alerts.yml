@@ -1,0 +1,56 @@
+groups:
+  - name: financeflow-availability
+    rules:
+      - alert: FinanceBackendScrapeMissing
+        expr: up{job="finance-backend"} == 0 or absent(up{job="finance-backend"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Finance backend metrics scrape is unavailable
+          description: Prometheus cannot scrape the backend metrics endpoint for at least two minutes.
+
+      - alert: FinanceBackendHigh5xxRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1e-9)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Finance backend 5xx rate is elevated
+          description: More than 5% of recorded HTTP requests failed with 5xx over five minutes.
+
+      - alert: FinanceBackendHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Finance backend p95 latency exceeds one second
+          description: HTTP request p95 latency has exceeded the initial one-second guardrail for ten minutes.
+
+      - alert: FinanceHikariConnectionsPending
+        expr: hikaricp_connections_pending > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Backend is waiting for database connections
+          description: HikariCP has pending connection borrowers; inspect query latency and pool saturation.
+
+      - alert: FinanceRedisScrapeMissing
+        expr: up{job="redis"} == 0 or absent(up{job="redis"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Finance Redis exporter scrape is unavailable
+          description: Prometheus cannot scrape Redis exporter metrics for at least two minutes.

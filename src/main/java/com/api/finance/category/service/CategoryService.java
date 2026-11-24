@@ -10,7 +10,7 @@ import com.api.finance.category.repository.CategoryRepository;
 import com.api.finance.category.repository.MerchantRuleRepository;
 import com.api.finance.config.AuthenticatedUser;
 import com.api.finance.shared.exception.ResourceNotFoundException;
-import com.api.finance.user.repository.UserRepository;
+import com.api.finance.user.application.port.UserDirectoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,7 +27,7 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final MerchantRuleRepository merchantRuleRepository;
-    private final UserRepository userRepository;
+    private final UserDirectoryPort userDirectory;
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> listar(AuthenticatedUser caller) {
@@ -144,7 +144,7 @@ public class CategoryService {
     }
 
     private UUID resolveUserId(AuthenticatedUser caller) {
-        return userRepository.findIdByKeycloakId(caller.id())
+        return userDirectory.findInternalUserId(caller.id())
                 .orElseThrow(() -> ResourceNotFoundException.of("User", caller.id()));
     }
 }

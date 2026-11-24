@@ -8,8 +8,9 @@ import com.stripe.model.checkout.Session;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -34,11 +35,9 @@ import java.util.UUID;
 public class StripeWebhookService {
 
     private final SubscriptionService subscriptionService;
+    private final JdbcTemplate jdbcTemplate;
 
-    @Value("${stripe.api-key}")
-    private String stripeApiKey;
-
-    @Async
+    @Transactional
     public void processar(Event event) {
         if (event == null || event.getType() == null) {
             log.warn("[Stripe] Evento nulo ou sem tipo");
@@ -47,19 +46,27 @@ public class StripeWebhookService {
 
         log.debug("[Stripe] Processando evento: type={} apiVersion={}", event.getType(), event.getApiVersion());
 
-        try {
-            switch (event.getType()) {
-                case "checkout.session.completed"      -> processarCheckoutConcluido(event);
-                // Ambos os eventos disparam a mesma lógica — o Stripe pode enviar
-                // "created" no primeiro ciclo dependendo do fluxo de checkout
-                case "customer.subscription.created",
-                     "customer.subscription.updated"  -> processarAssinaturaAtualizada(event);
-                case "customer.subscription.deleted"  -> processarAssinaturaCancelada(event);
-                case "payment_intent.succeeded"       -> processarPagamentoAprovado(event);
-                default -> log.debug("[Stripe] Evento ignorado: {}", event.getType());
-            }
-        } catch (Exception e) {
-            log.error("[Stripe] Erro ao processar evento {}: {}", event.getType(), e.getMessage(), e);
+        int inserted = jdbcTemplate.update("""
+                INSERT INTO stripe_webhook_events (event_id, event_type, received_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (event_id) DO NOTHING
+                """, event.getId(), event.getType());
+
+        if (inserted == 0) {
+            log.info("[Stripe] Evento duplicado ignorado: eventId={} type={}", event.getId(), event.getType());
+            return;
+        }
+
+        // A marca de idempotência e as alterações de assinatura participam da
+        // mesma transação SQL. Se o processamento falhar, ambas sofrem rollback
+        // e o Stripe poderá reenviar o webhook.
+        switch (event.getType()) {
+            case "checkout.session.completed"      -> processarCheckoutConcluido(event);
+            case "customer.subscription.created",
+                 "customer.subscription.updated"  -> processarAssinaturaAtualizada(event);
+            case "customer.subscription.deleted"  -> processarAssinaturaCancelada(event);
+            case "payment_intent.succeeded"       -> processarPagamentoAprovado(event);
+            default -> log.debug("[Stripe] Evento ignorado: {}", event.getType());
         }
     }
 
@@ -70,8 +77,7 @@ public class StripeWebhookService {
             Session session = deserializar(event, Session.class);
 
             if (session == null) {
-                log.warn("[Stripe] Não foi possível desserializar Session em checkout.session.completed");
-                return;
+                throw new IllegalStateException("Não foi possível desserializar Session em checkout.session.completed.");
             }
 
             log.info("[Stripe] Checkout concluído: sessionId={} mode={}", session.getId(), session.getMode());
@@ -97,7 +103,7 @@ public class StripeWebhookService {
             }
 
         } catch (Exception e) {
-            log.error("[Stripe] Erro em checkout.session.completed", e);
+            throw new IllegalStateException("Falha ao processar checkout.session.completed.", e);
         }
     }
 
@@ -107,53 +113,39 @@ public class StripeWebhookService {
         try {
             com.stripe.model.Subscription stripeSub =
                     deserializar(event, com.stripe.model.Subscription.class);
-
             if (stripeSub == null) {
-                log.warn("[Stripe] Não foi possível desserializar Subscription em {}", event.getType());
-                return;
+                throw new IllegalStateException("Não foi possível desserializar Subscription em " + event.getType() + ".");
             }
 
-            log.info("[Stripe] Assinatura {}: id={} status={}", event.getType(), stripeSub.getId(), stripeSub.getStatus());
+            Long eventCreated = event.getCreated();
+            if (eventCreated == null) {
+                throw new IllegalStateException("Evento Stripe sem timestamp de criação.");
+            }
 
-            if (!"active".equals(stripeSub.getStatus())) {
-                log.info("[Stripe] Subscription não está ativa (status={}), ignorando", stripeSub.getStatus());
-                return;
+            Long periodEnd = null;
+            if ("active".equalsIgnoreCase(stripeSub.getStatus())) {
+                try {
+                    periodEnd = stripeSub.getItems().getData().get(0).getCurrentPeriodEnd();
+                } catch (Exception ignored) {
+                    // The service rejects an active subscription without a real provider period end.
+                }
+                if (periodEnd == null) {
+                    throw new IllegalStateException(
+                            "Stripe não informou currentPeriodEnd para a subscription " + stripeSub.getId() + ".");
+                }
             }
 
             Map<String, String> metadata = stripeSub.getMetadata();
             UUID userId = resolverUserId(metadata != null ? metadata.get("userId") : null);
+            LocalDate fim = periodEnd == null ? null
+                    : Instant.ofEpochSecond(periodEnd).atZone(ZoneId.of("UTC")).toLocalDate();
 
-            if (userId == null) {
-                log.warn("[Stripe] userId não encontrado no metadata da subscription={}", stripeSub.getId());
-                return;
-            }
-
-            // Pega o fim do período da primeira item da subscription
-            Long periodEnd = null;
-            try {
-                periodEnd = stripeSub.getItems()
-                        .getData().get(0)
-                        .getCurrentPeriodEnd();
-            } catch (Exception ex) {
-                log.warn("[Stripe] Não foi possível ler currentPeriodEnd da subscription={}: {}", stripeSub.getId(), ex.getMessage());
-            }
-
-            LocalDate fim;
-            if (periodEnd != null) {
-                fim = Instant.ofEpochSecond(periodEnd)
-                        .atZone(ZoneId.systemDefault()).toLocalDate();
-            } else {
-                // Fallback: 30 dias a partir de hoje se não conseguir ler o período
-                fim = LocalDate.now().plusDays(30);
-                log.warn("[Stripe] currentPeriodEnd nulo, usando fallback de 30 dias. subscription={}", stripeSub.getId());
-            }
-
-            LocalDate inicio = LocalDate.now();
-            subscriptionService.ativarPro(userId, null, stripeSub.getId(), inicio, fim);
-            log.info("[Stripe] PRO ativado/renovado userId={} até={}", userId, fim);
-
+            subscriptionService.aplicarEventoStripeSubscription(
+                    stripeSub.getId(), userId, stripeSub.getStatus(), fim, eventCreated, event.getId());
+            log.info("[Stripe] Estado da subscription reconciliado: status={} eventId={}",
+                    stripeSub.getStatus(), event.getId());
         } catch (Exception e) {
-            log.error("[Stripe] Erro em {}", event.getType(), e);
+            throw new IllegalStateException("Falha ao processar " + event.getType() + ".", e);
         }
     }
 
@@ -163,17 +155,21 @@ public class StripeWebhookService {
         try {
             com.stripe.model.Subscription stripeSub =
                     deserializar(event, com.stripe.model.Subscription.class);
-
             if (stripeSub == null) {
-                log.warn("[Stripe] Não foi possível desserializar Subscription em subscription.deleted");
-                return;
+                throw new IllegalStateException("Não foi possível desserializar Subscription em subscription.deleted.");
+            }
+            Long eventCreated = event.getCreated();
+            if (eventCreated == null) {
+                throw new IllegalStateException("Evento Stripe sem timestamp de criação.");
             }
 
-            log.info("[Stripe] Subscription cancelada/expirada: id={}", stripeSub.getId());
-            subscriptionService.expirarAssinaturasVencidas();
-
+            Map<String, String> metadata = stripeSub.getMetadata();
+            UUID userId = resolverUserId(metadata != null ? metadata.get("userId") : null);
+            subscriptionService.aplicarEventoStripeSubscription(
+                    stripeSub.getId(), userId, "canceled", null, eventCreated, event.getId());
+            log.info("[Stripe] Cancelamento reconciliado: eventId={}", event.getId());
         } catch (Exception e) {
-            log.error("[Stripe] Erro em subscription.deleted", e);
+            throw new IllegalStateException("Falha ao processar customer.subscription.deleted.", e);
         }
     }
 
@@ -183,7 +179,9 @@ public class StripeWebhookService {
         try {
             PaymentIntent paymentIntent = deserializar(event, PaymentIntent.class);
 
-            if (paymentIntent == null) return;
+            if (paymentIntent == null) {
+                throw new IllegalStateException("Não foi possível desserializar PaymentIntent.");
+            }
 
             log.info("[Stripe] PaymentIntent aprovado: id={}", paymentIntent.getId());
 
@@ -201,7 +199,7 @@ public class StripeWebhookService {
             log.info("[Stripe] PRO ativado via payment_intent userId={} até={}", userId, fim);
 
         } catch (Exception e) {
-            log.error("[Stripe] Erro em payment_intent.succeeded", e);
+            throw new IllegalStateException("Falha ao processar payment_intent.succeeded.", e);
         }
     }
 
