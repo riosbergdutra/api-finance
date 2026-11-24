@@ -68,7 +68,7 @@ public class GoalService {
     public GoalResponse atualizar(UUID id, CreateGoalRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         if (goal.isConcluida()) {
@@ -92,7 +92,7 @@ public class GoalService {
     public GoalResponse depositar(UUID id, DepositRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         if (goal.isConcluida()) {
@@ -132,7 +132,7 @@ public class GoalService {
     public GoalResponse sacar(UUID id, DepositRequest req, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         BigDecimal novoValor = goal.getValorAtual().subtract(req.valor());
@@ -154,7 +154,7 @@ public class GoalService {
     public GoalResponse concluir(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
 
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
 
         boolean jaConcluida = goal.isConcluida();
@@ -178,7 +178,7 @@ public class GoalService {
     @Transactional
     public void deletar(UUID id, AuthenticatedUser caller) {
         UUID userId = resolveUserId(caller);
-        Goal goal = goalRepository.findByIdAndUserId(id, userId)
+        Goal goal = goalRepository.findByIdAndUserIdForUpdate(id, userId)
                 .orElseThrow(() -> new GoalNotFoundException("Meta não encontrada: " + id));
         goalRepository.delete(goal);
     }
