@@ -148,19 +148,31 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
     /** Closes this replica's sockets; invoked for both local and Redis-broadcast revocations. */
     public void closeConnectionsForRevokedSession(String revokedSessionId) {
         sessoesPorUsuario.forEach((keycloakId, sessions) -> {
-            sessions.removeIf(webSocket -> {
-                if (!revokedSessionId.equals(webSocket.getAttributes().get("bffSessionId"))) {
-                    return false;
-                }
-                try {
-                    if (webSocket.isOpen()) {
-                        webSocket.close(CloseStatus.POLICY_VIOLATION);
+            // Primeiro identifica e remove as conexões da lista, sem efeitos colaterais
+            // dentro do removeIf. O close() pode disparar afterConnectionClosed()
+            // sincronamente, que também remove a sessão da mesma CopyOnWriteArrayList.
+            List<WebSocketSession> revokedSessions = sessions.stream()
+                    .filter(webSocket -> revokedSessionId.equals(
+                            webSocket.getAttributes().get("bffSessionId")))
+                    .toList();
+
+            if (!revokedSessions.isEmpty()) {
+                sessions.removeAll(revokedSessions);
+
+                // Fecha somente depois da remoção. O callback afterConnectionClosed()
+                // pode executar novamente a remoção, que será inofensiva.
+                for (WebSocketSession webSocket : revokedSessions) {
+                    try {
+                        if (webSocket.isOpen()) {
+                            webSocket.close(CloseStatus.POLICY_VIOLATION);
+                        }
+                    } catch (IOException e) {
+                        log.warn("[WS] Não foi possível fechar conexão após revogação de sessão: {}",
+                                webSocket.getId());
                     }
-                } catch (IOException e) {
-                    log.warn("[WS] Não foi possível fechar conexão após revogação de sessão: {}", webSocket.getId());
                 }
-                return true;
-            });
+            }
+
             if (sessions.isEmpty()) {
                 sessoesPorUsuario.remove(keycloakId, sessions);
             }
