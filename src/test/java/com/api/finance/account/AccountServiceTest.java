@@ -186,7 +186,7 @@ class AccountServiceTest {
             UpdateAccountRequest req = new UpdateAccountRequest(
                     "Conta Atualizada", AccountType.POUPANCA, null, null);
 
-            given(accountRepository.findByIdAndUserId(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
+            given(accountRepository.findByIdAndUserIdForUpdate(ACCOUNT_ID, USER_ID)).willReturn(Optional.of(account));
             given(accountRepository.existsByUserIdAndNameIgnoreCaseAndIdNot(USER_ID, "Conta Atualizada", ACCOUNT_ID)).willReturn(false);
             given(accountRepository.save(any())).willReturn(account);
 
@@ -199,7 +199,7 @@ class AccountServiceTest {
         @DisplayName("lança AccountNotFoundException quando conta não pertence ao usuário")
         void lancaNotFoundQuandoContaDeOutroUsuario() {
             UpdateAccountRequest req = new UpdateAccountRequest("X", AccountType.CORRENTE, null, null);
-            given(accountRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+            given(accountRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> accountService.update(UUID.randomUUID(), req, caller))
                     .isInstanceOf(AccountNotFoundException.class);
