@@ -57,6 +57,42 @@ jobs:
           for script in scripts/ops/*.sh; do
             bash -n "$script"
           done
+      - name: Exercise isolated PostgreSQL V2-to-V9 restore drill
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          fixture="financeflow-v2-fixture-${GITHUB_RUN_ID}"
+          fixture_password="$(openssl rand -hex 24)"
+          backup_file="/tmp/financeflow-sanitized-v2-${GITHUB_RUN_ID}.dump"
+          cleanup() {
+            docker rm -f "$fixture" >/dev/null 2>&1 || true
+            rm -f "$backup_file"
+          }
+          trap cleanup EXIT
+          docker run --detach --rm \
+            --name "$fixture" \
+            --env POSTGRES_PASSWORD="$fixture_password" \
+            --env POSTGRES_DB=finance \
+            postgres:16 >/dev/null
+          ready=0
+          for attempt in $(seq 1 60); do
+            if docker exec "$fixture" pg_isready -U postgres -d finance >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = "1"
+          docker run --rm \
+            --network "container:$fixture" \
+            --volume "$PWD/src/main/resources/db/migration:/flyway/sql:ro" \
+            --env FLYWAY_URL=jdbc:postgresql://127.0.0.1:5432/finance \
+            --env FLYWAY_USER=postgres \
+            --env FLYWAY_PASSWORD="$fixture_password" \
+            --env FLYWAY_LOCATIONS=filesystem:/flyway/sql \
+            flyway/flyway:10.20.1 -target=2 migrate
+          docker exec "$fixture" pg_dump -U postgres -Fc finance > "$backup_file"
+          SANITIZED_BACKUP_FILE="$backup_file" bash scripts/ops/restore-and-migrate-drill.sh
       - name: Validate Alertmanager receiver secret guard
         run: |
           printf '%s' 'https://example.invalid/alertmanager-webhook' > /tmp/financeflow-alertmanager-webhook-url
