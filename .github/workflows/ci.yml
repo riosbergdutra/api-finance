@@ -37,5 +37,20 @@ jobs:
           docker run --rm --add-host finance-app:127.0.0.1 \
             -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
             nginx:1.27-alpine nginx -t
+      - name: Validate Prometheus configuration and alert rules
+        run: |
+          docker run --rm \
+            -v "$PWD/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v2.52.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            -v "$PWD/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v2.52.0 \
+            check rules /etc/prometheus/alerts.yml
+      - name: Validate k6 load-test script syntax
+        run: |
+          docker run --rm \
+            -v "$PWD/performance:/scripts:ro" \
+            grafana/k6:0.54.0 inspect /scripts/k6/readiness.js
       - name: Build production container image
         run: docker build --pull --tag financeflow-backend:${{ github.sha }} .
