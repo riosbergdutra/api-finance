@@ -4,7 +4,7 @@ set +x
 
 : "${SANITIZED_BACKUP_FILE:?Set SANITIZED_BACKUP_FILE to a sanitized custom-format pg_dump created at Flyway V2}"
 [[ -f "$SANITIZED_BACKUP_FILE" ]] || { echo "Backup file not found" >&2; exit 2; }
-for command_name in docker pg_restore psql createdb sha256sum openssl; do
+for command_name in docker psql createdb sha256sum openssl; do
   command -v "$command_name" >/dev/null || {
     echo "Required command not found: $command_name" >&2
     exit 2
