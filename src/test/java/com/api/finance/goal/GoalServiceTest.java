@@ -104,7 +104,7 @@ class GoalServiceTest {
     void atualizarMetaConcluida() {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
         goal.setConcluida(true);
-        given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+        given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
         CreateGoalRequest req = new CreateGoalRequest("X", BigDecimal.ONE, null, null, null);
 
@@ -124,7 +124,7 @@ class GoalServiceTest {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, alvo=5000, deposito=500 → 1500 (ainda pendente)
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(500));
-            given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+            given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
             given(goalRepository.save(any())).willReturn(goal);
 
             GoalResponse result = goalService.depositar(GOAL_ID, req, caller);
@@ -139,7 +139,7 @@ class GoalServiceTest {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, alvo=5000, deposito=4000 → 5000 = concluída
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(4000));
-            given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+            given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
             given(goalRepository.save(any())).willReturn(goal);
 
             goalService.depositar(GOAL_ID, req, caller);
@@ -152,7 +152,7 @@ class GoalServiceTest {
         void concluiQuandoUltrapassaAlvo() {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(99999));
-            given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+            given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
             given(goalRepository.save(any())).willReturn(goal);
 
             goalService.depositar(GOAL_ID, req, caller);
@@ -165,7 +165,7 @@ class GoalServiceTest {
         void lancaExcecaoMetaConcluida() {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             goal.setConcluida(true);
-            given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+            given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
             assertThatThrownBy(() -> goalService.depositar(GOAL_ID, new DepositRequest(BigDecimal.ONE), caller))
                     .isInstanceOf(IllegalStateException.class);
@@ -183,7 +183,7 @@ class GoalServiceTest {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, saque=300 → 700
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(300));
-            given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+            given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
             given(goalRepository.save(any())).willReturn(goal);
 
             goalService.sacar(GOAL_ID, req, caller);
@@ -198,7 +198,7 @@ class GoalServiceTest {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
             // valorAtual=1000, saque=2000
             DepositRequest req = new DepositRequest(BigDecimal.valueOf(2000));
-            given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+            given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
             assertThatThrownBy(() -> goalService.sacar(GOAL_ID, req, caller))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -212,7 +212,7 @@ class GoalServiceTest {
     @DisplayName("concluir: marca meta como concluída manualmente")
     void concluirManualmente() {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-        given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+        given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
         given(goalRepository.save(any())).willReturn(goal);
 
         goalService.concluir(GOAL_ID, caller);
@@ -226,7 +226,7 @@ class GoalServiceTest {
     @DisplayName("deletar: remove meta com sucesso")
     void deletarComSucesso() {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-        given(goalRepository.findByIdAndUserId(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
+        given(goalRepository.findByIdAndUserIdForUpdate(GOAL_ID, USER_ID)).willReturn(Optional.of(goal));
 
         assertThatCode(() -> goalService.deletar(GOAL_ID, caller)).doesNotThrowAnyException();
 
@@ -237,7 +237,7 @@ class GoalServiceTest {
     @DisplayName("deletar: lança GoalNotFoundException quando não encontrada")
     void deletarLancaNotFound() {
             given(userDirectory.findInternalUserId(KEYCLOAK_ID)).willReturn(Optional.of(USER_ID));
-        given(goalRepository.findByIdAndUserId(any(), eq(USER_ID))).willReturn(Optional.empty());
+        given(goalRepository.findByIdAndUserIdForUpdate(any(), eq(USER_ID))).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.deletar(UUID.randomUUID(), caller))
                 .isInstanceOf(GoalNotFoundException.class);
