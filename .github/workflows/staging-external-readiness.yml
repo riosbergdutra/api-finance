@@ -1,0 +1,102 @@
+name: Staging external readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_load_test:
+        description: Run the conservative 5-VU / 2-minute readiness probe against staging
+        required: true
+        default: false
+        type: boolean
+      run_stripe_webhooks:
+        description: Trigger Stripe Test Mode webhook fixtures against the registered staging endpoint
+        required: true
+        default: false
+        type: boolean
+      delete_keycloak_test_user:
+        description: Delete only the explicitly configured financeflow-it-* disposable Keycloak test user
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-external-readiness
+  cancel-in-progress: false
+
+jobs:
+  keycloak-and-tls:
+    name: Keycloak, backend and TLS smoke checks
+    runs-on: ubuntu-latest
+    environment: financeflow-staging
+    timeout-minutes: 10
+    env:
+      STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      KEYCLOAK_ISSUER_URI: ${{ secrets.KEYCLOAK_ISSUER_URI }}
+      KEYCLOAK_ADMIN_BASE_URL: ${{ secrets.KEYCLOAK_ADMIN_BASE_URL }}
+      KEYCLOAK_REALM: ${{ secrets.KEYCLOAK_REALM }}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+      KEYCLOAK_SMOKE_CLIENT_ID: ${{ secrets.KEYCLOAK_SMOKE_CLIENT_ID }}
+      KEYCLOAK_SMOKE_CLIENT_SECRET: ${{ secrets.KEYCLOAK_SMOKE_CLIENT_SECRET }}
+      KEYCLOAK_API_AUDIENCE: ${{ secrets.KEYCLOAK_API_AUDIENCE }}
+      KEYCLOAK_TEST_USER_ID: ${{ secrets.KEYCLOAK_TEST_USER_ID }}
+      KEYCLOAK_DELETE_TEST_USER: ${{ inputs.delete_keycloak_test_user }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install JSON validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq
+      - name: Run guarded Keycloak and TLS checks
+        run: bash scripts/ops/check-staging-keycloak.sh
+
+  stripe-test-webhooks:
+    name: Stripe Test Mode webhook exercise
+    if: ${{ inputs.run_stripe_webhooks }}
+    runs-on: ubuntu-latest
+    environment: financeflow-staging
+    timeout-minutes: 10
+    env:
+      STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+      STRIPE_WEBHOOK_ENDPOINT_ID: ${{ secrets.STRIPE_WEBHOOK_ENDPOINT_ID }}
+      STRIPE_WEBHOOK_ENDPOINT_URL: ${{ secrets.STRIPE_WEBHOOK_ENDPOINT_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned Stripe CLI
+        run: npm install --global @stripe/cli@1.55.14
+      - name: Trigger guarded Test Mode webhook fixtures
+        run: bash scripts/ops/stripe-test-webhooks.sh
+
+  staging-load:
+    name: Conservative staging readiness load probe
+    if: ${{ inputs.run_load_test }}
+    runs-on: ubuntu-latest
+    environment: financeflow-staging
+    timeout-minutes: 10
+    env:
+      BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      VUS: "5"
+      DURATION: 2m
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run k6 against staging only
+        run: |
+          test -n "$BASE_URL"
+          case "$BASE_URL" in https://*) ;; *) echo "BASE_URL must be HTTPS staging" >&2; exit 2 ;; esac
+          docker run --rm \
+            --volume "$PWD/performance:/scripts:ro" \
+            --env BASE_URL \
+            --env VUS \
+            --env DURATION \
+            grafana/k6:0.54.0 run /scripts/k6/readiness.js

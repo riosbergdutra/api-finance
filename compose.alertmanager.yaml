@@ -1,0 +1,23 @@
+services:
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: ["alerting"]
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./ops/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    secrets:
+      - alertmanager_webhook_url
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--web.listen-address=0.0.0.0:9093"
+      - "--storage.path=/alertmanager"
+    restart: unless-stopped
+
+volumes:
+  alertmanager_data:
+
+secrets:
+  alertmanager_webhook_url:
+    file: ${ALERTMANAGER_WEBHOOK_URL_FILE:?Set ALERTMANAGER_WEBHOOK_URL_FILE to a protected file containing the webhook URL}
